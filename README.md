@@ -63,6 +63,23 @@ docker run --rm --entrypoint python contextops:local -m pytest
 
 The container runs as an unprivileged user. Its SQLite data directory is writable inside the container; mount a local directory at `/app/data` only when persistence across container runs is needed.
 
+## Deploy the container
+
+For a deployment host with Docker installed, build and start the exact image with:
+
+```sh
+docker build --tag contextops:local .
+docker run --detach --name contextops --publish 8000:8000 --restart unless-stopped contextops:local
+```
+
+Check the deployed process locally on the host:
+
+```sh
+curl --fail http://127.0.0.1:8000/health
+```
+
+Stop it with `docker stop contextops`. This MVP has no external service or production authentication layer; expose it only in a trusted environment until those concerns are intentionally added.
+
 ## Demonstration workflow
 
 The seeded cases are fictional and deterministic:
