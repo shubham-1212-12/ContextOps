@@ -124,10 +124,16 @@ class ContextOpsService:
         rationale: str,
         edited_proposal: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        if decision not in {"accept", "edit", "reject", "defer"}:
-            raise ValueError("decision must be accept, edit, reject, or defer")
+        if decision not in {"accept", "approve", "edit", "reject", "defer", "escalate"}:
+            raise ValueError(
+                "decision must be approve (or accept), edit, reject, defer, or escalate"
+            )
         if not rationale.strip():
             raise ValueError("rationale is required")
+        if decision == "edit" and edited_proposal is None:
+            raise ValueError("edited_proposal is required when decision is edit")
+        if edited_proposal is not None and not isinstance(edited_proposal, dict):
+            raise ValueError("edited_proposal must be an object")
         if self.get_case(case_id) is None:
             raise KeyError(case_id)
         created_at = _now()
@@ -149,6 +155,7 @@ class ContextOpsService:
             payload = {
                 "decision": decision,
                 "rationale": rationale.strip(),
+                "edited_proposal": edited_proposal,
                 "preserved_original_proposal": True,
             }
             connection.execute(

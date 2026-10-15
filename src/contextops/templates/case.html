@@ -34,13 +34,16 @@
     <form data-decision-form data-case-id="{{ case.id }}">
       <label for="decision">Decision</label>
       <select id="decision" name="decision">
-        <option value="reject">Reject proposal</option>
+        <option value="approve">Approve proposal</option>
         <option value="edit">Edit proposal</option>
-        <option value="accept">Accept proposal</option>
+        <option value="reject">Reject proposal</option>
         <option value="defer">Defer decision</option>
+        <option value="escalate">Escalate for further review</option>
       </select>
       <label for="rationale">Reviewer rationale</label>
       <textarea id="rationale" name="rationale" required rows="4" placeholder="Explain the contextual decision..."></textarea>
+      <label for="edited_proposal">Edited proposal JSON (required for an edited proposal)</label>
+      <textarea id="edited_proposal" name="edited_proposal" rows="5" placeholder='{"event": "...", "start": "..."}'></textarea>
       <p><button type="submit">Record decision</button></p>
     </form>
     {% if case.decisions %}

@@ -39,9 +39,19 @@ if (decisionForm) {
     event.preventDefault();
     const form = new FormData(decisionForm);
     try {
+      const editedProposalText = String(form.get("edited_proposal") || "").trim();
+      let editedProposal;
+      if (editedProposalText) {
+        try {
+          editedProposal = JSON.parse(editedProposalText);
+        } catch (_error) {
+          throw new Error("Edited proposal must be valid JSON.");
+        }
+      }
       await postJson(`/api/cases/${decisionForm.dataset.caseId}/decision`, {
         decision: form.get("decision"),
         rationale: form.get("rationale"),
+        edited_proposal: editedProposal,
       });
       window.location.reload();
     } catch (error) {

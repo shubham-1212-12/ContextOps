@@ -86,7 +86,7 @@ The seeded cases are fictional and deterministic:
 
 1. Open **Quarterly design review proposed after hours**.
 2. Inspect the original proposal, working-hours evidence, and the separate warning and unresolved-ambiguity findings.
-3. Select **Reject proposal**, enter a rationale, and record the decision. The original proposal and audit event remain available.
+3. Choose **Approve**, **Edit**, **Reject**, **Defer**, or **Escalate**, enter a rationale, and record the decision. For **Edit**, provide the revised proposal as JSON. The original proposal and audit event remain available.
 4. Create a draft rule from the confirmed working-hours violation. The rule exposes its title, description, failure pattern, triggering condition, expected behavior, test case, evaluation result, and status.
 5. Activate the rule explicitly from the review queue. Rules never become active automatically.
 6. Open **Roadmap review proposed after hours**, choose **Evaluate active rules**, and verify that the activated rule is reported as `matched`.

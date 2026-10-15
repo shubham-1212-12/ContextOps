@@ -92,3 +92,87 @@ def test_end_to_end_rejection_rule_activation_and_regression(tmp_path) -> None:
     assert client.post(
         "/api/cases/case-similar-outside-hours/evaluate-rules"
     ).json()["evaluations"] == []
+    source_case = client.get("/api/cases/case-outside-hours").json()
+    assert [event["event_type"] for event in source_case["audit"]] == [
+        "human_decision_recorded",
+        "quality_rule_drafted",
+        "quality_rule_activated",
+        "quality_rule_disabled",
+    ]
+
+
+def test_edit_requires_an_edited_proposal(tmp_path) -> None:
+    client = client_for(tmp_path)
+
+    response = client.post(
+        "/api/cases/case-outside-hours/decision",
+        json={"decision": "edit", "rationale": "A revised time is needed."},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "edited_proposal is required when decision is edit"
+
+
+def test_legacy_accept_decision_remains_supported(tmp_path) -> None:
+    client = client_for(tmp_path)
+
+    response = client.post(
+        "/api/cases/case-outside-hours/decision",
+        json={"decision": "accept", "rationale": "Keep compatibility with existing clients."},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["decision"] == "accept"
+
+
+def test_all_human_decisions_persist_rationales_and_edit_without_losing_original(
+    tmp_path,
+) -> None:
+    client = client_for(tmp_path)
+    decisions = [
+        ("approve", "The evidence supports this proposal."),
+        (
+            "edit",
+            "Move the review into the confirmed working-hours window.",
+        ),
+        ("defer", "Wait for the missing attendee calendar evidence."),
+        ("escalate", "A second reviewer should resolve the remaining ambiguity."),
+    ]
+    edited_proposal = {
+        "event": "Quarterly design review",
+        "start": "2026-10-16T16:00:00+05:30",
+        "duration_minutes": 60,
+        "timezone": "Asia/Kolkata",
+    }
+
+    for decision, rationale in decisions:
+        response = client.post(
+            "/api/cases/case-outside-hours/decision",
+            json={
+                "decision": decision,
+                "rationale": rationale,
+                "edited_proposal": edited_proposal if decision == "edit" else None,
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["decision"] == decision
+
+    case_data = client.get("/api/cases/case-outside-hours").json()
+    assert [decision["decision"] for decision in case_data["decisions"]] == [
+        "approve",
+        "edit",
+        "defer",
+        "escalate",
+    ]
+    assert [decision["rationale"] for decision in case_data["decisions"]] == [
+        rationale for _, rationale in decisions
+    ]
+    assert case_data["decisions"][1]["edited_proposal"] == edited_proposal
+    assert case_data["original_proposal"]["start"] == "2026-10-16T18:00:00+05:30"
+    assert [event["event_type"] for event in case_data["audit"]] == [
+        "human_decision_recorded",
+        "human_decision_recorded",
+        "human_decision_recorded",
+        "human_decision_recorded",
+    ]
+    assert case_data["audit"][1]["payload"]["edited_proposal"] == edited_proposal
