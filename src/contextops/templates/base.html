@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}ContextOps{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+  </head>
+  <body>
+    <header><a href="/">ContextOps</a><span class="muted"> · Human review for scheduling actions</span></header>
+    {% block content %}{% endblock %}
+    <script src="{{ url_for('static', path='app.js') }}"></script>
+  </body>
+</html>

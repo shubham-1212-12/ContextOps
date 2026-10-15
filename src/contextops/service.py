@@ -1,0 +1,351 @@
+"""Application services for review, decisions, audit, and quality rules."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from typing import Any
+
+from contextops.database import Database, read_json
+from contextops.detector import case_candidate, detect_issues
+from contextops.fixtures import fictional_cases
+from contextops.quality_rules import QualityRule, RuleStatus, evaluate_rule
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class ContextOpsService:
+    """Use-case boundary for the offline ContextOps MVP."""
+
+    def __init__(self, database: Database) -> None:
+        self.database = database
+        self.database.initialize()
+        self._seed_if_empty()
+
+    def _seed_if_empty(self) -> None:
+        with self.database.connect() as connection:
+            if connection.execute("SELECT 1 FROM scheduling_cases LIMIT 1").fetchone():
+                return
+            for case in fictional_cases():
+                connection.execute(
+                    """
+                    INSERT INTO scheduling_cases (id, title, original_proposal_json, context_json)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        case["id"],
+                        case["title"],
+                        Database.serialize(case["original_proposal"]),
+                        Database.serialize(case["context"]),
+                    ),
+                )
+                for issue in detect_issues(case["original_proposal"], case["context"]):
+                    connection.execute(
+                        """
+                        INSERT INTO detected_issues
+                            (id, case_id, code, category, title, evidence, severity)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            f"{case['id']}:{issue['code']}",
+                            case["id"],
+                            issue["code"],
+                            issue["category"],
+                            issue["title"],
+                            issue["evidence"],
+                            issue["severity"],
+                        ),
+                    )
+
+    def list_cases(self) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                "SELECT id, title FROM scheduling_cases ORDER BY id"
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_case(self, case_id: str) -> dict[str, Any] | None:
+        with self.database.connect() as connection:
+            case_row = connection.execute(
+                "SELECT * FROM scheduling_cases WHERE id = ?", (case_id,)
+            ).fetchone()
+            if case_row is None:
+                return None
+            issues = connection.execute(
+                "SELECT * FROM detected_issues WHERE case_id = ? ORDER BY id", (case_id,)
+            ).fetchall()
+            decisions = connection.execute(
+                "SELECT * FROM human_decisions WHERE case_id = ? ORDER BY id", (case_id,)
+            ).fetchall()
+            audit = connection.execute(
+                "SELECT * FROM audit_events WHERE case_id = ? ORDER BY id", (case_id,)
+            ).fetchall()
+            evaluations = connection.execute(
+                """
+                SELECT rule_evaluations.*, quality_rules.title AS rule_title,
+                       quality_rules.status AS rule_status
+                FROM rule_evaluations
+                JOIN quality_rules ON quality_rules.id = rule_evaluations.rule_id
+                WHERE rule_evaluations.case_id = ?
+                ORDER BY rule_evaluations.id
+                """,
+                (case_id,),
+            ).fetchall()
+            return {
+                "id": case_row["id"],
+                "title": case_row["title"],
+                "original_proposal": read_json(case_row["original_proposal_json"]),
+                "context": read_json(case_row["context_json"]),
+                "issues": [dict(row) for row in issues],
+                "decisions": [
+                    {
+                        **dict(row),
+                        "edited_proposal": (
+                            json.loads(row["edited_proposal_json"])
+                            if row["edited_proposal_json"]
+                            else None
+                        ),
+                    }
+                    for row in decisions
+                ],
+                "audit": [
+                    {**dict(row), "payload": read_json(row["payload_json"])}
+                    for row in audit
+                ],
+                "evaluations": [dict(row) for row in evaluations],
+            }
+
+    def record_decision(
+        self,
+        case_id: str,
+        decision: str,
+        rationale: str,
+        edited_proposal: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if decision not in {"accept", "edit", "reject", "defer"}:
+            raise ValueError("decision must be accept, edit, reject, or defer")
+        if not rationale.strip():
+            raise ValueError("rationale is required")
+        if self.get_case(case_id) is None:
+            raise KeyError(case_id)
+        created_at = _now()
+        with self.database.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO human_decisions
+                    (case_id, decision, rationale, edited_proposal_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    case_id,
+                    decision,
+                    rationale.strip(),
+                    Database.serialize(edited_proposal) if edited_proposal else None,
+                    created_at,
+                ),
+            )
+            payload = {
+                "decision": decision,
+                "rationale": rationale.strip(),
+                "preserved_original_proposal": True,
+            }
+            connection.execute(
+                """
+                INSERT INTO audit_events (case_id, event_type, payload_json, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (case_id, "human_decision_recorded", Database.serialize(payload), created_at),
+            )
+            decision_id = cursor.lastrowid
+        return {"id": decision_id, **payload, "created_at": created_at}
+
+    def create_rule_from_issue(self, case_id: str, issue_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            issue = connection.execute(
+                "SELECT * FROM detected_issues WHERE id = ? AND case_id = ?",
+                (issue_id, case_id),
+            ).fetchone()
+            if issue is None:
+                raise KeyError(issue_id)
+            rule = QualityRule(
+                title=f"Prevent: {issue['title']}",
+                description=(
+                    f"When a scheduling action shows the pattern '{issue['code']}', "
+                    "review it before execution."
+                ),
+                failure_pattern=issue["code"],
+                triggering_condition="scheduling action",
+                expected_behavior=(
+                    "Reject or revise the proposal and show the supporting evidence "
+                    "before execution."
+                ),
+                test_case=f"scheduling action {issue['code']}",
+            )
+            cursor = connection.execute(
+                """
+                INSERT INTO quality_rules
+                    (source_issue_id, title, description, failure_pattern,
+                     triggering_condition, expected_behavior, test_case,
+                     evaluation_result, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    issue_id,
+                    rule.title,
+                    rule.description,
+                    rule.failure_pattern,
+                    rule.triggering_condition,
+                    rule.expected_behavior,
+                    rule.test_case,
+                    None,
+                    rule.status.value,
+                ),
+            )
+            rule_id = cursor.lastrowid
+            connection.execute(
+                """
+                INSERT INTO audit_events (case_id, event_type, payload_json, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    case_id,
+                    "quality_rule_drafted",
+                    Database.serialize({"rule_id": rule_id, "status": rule.status.value}),
+                    _now(),
+                ),
+            )
+        return self.get_rule(int(rule_id))
+
+    def list_rules(self) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            rows = connection.execute("SELECT * FROM quality_rules ORDER BY id").fetchall()
+            return [dict(row) for row in rows]
+
+    def get_rule(self, rule_id: int) -> dict[str, Any] | None:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM quality_rules WHERE id = ?", (rule_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def activate_rule(self, rule_id: int) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT quality_rules.*, detected_issues.case_id AS source_case_id
+                FROM quality_rules
+                LEFT JOIN detected_issues ON detected_issues.id = quality_rules.source_issue_id
+                WHERE quality_rules.id = ?
+                """,
+                (rule_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(rule_id)
+            connection.execute(
+                "UPDATE quality_rules SET status = 'active' WHERE id = ?", (rule_id,)
+            )
+            connection.execute(
+                """
+                INSERT INTO audit_events (case_id, event_type, payload_json, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    row["source_case_id"],
+                    "quality_rule_activated",
+                    Database.serialize({"rule_id": rule_id, "status": RuleStatus.ACTIVE.value}),
+                    _now(),
+                ),
+            )
+        return self.get_rule(rule_id)
+
+    def disable_rule(self, rule_id: int) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT quality_rules.id, detected_issues.case_id AS source_case_id
+                FROM quality_rules
+                LEFT JOIN detected_issues ON detected_issues.id = quality_rules.source_issue_id
+                WHERE quality_rules.id = ?
+                """,
+                (rule_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(rule_id)
+            connection.execute(
+                "UPDATE quality_rules SET status = 'disabled', evaluation_result = NULL WHERE id = ?",
+                (rule_id,),
+            )
+            connection.execute(
+                """
+                INSERT INTO audit_events (case_id, event_type, payload_json, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    row["source_case_id"],
+                    "quality_rule_disabled",
+                    Database.serialize({"rule_id": rule_id, "status": RuleStatus.DISABLED.value}),
+                    _now(),
+                ),
+            )
+        return self.get_rule(rule_id)
+
+    def evaluate_active_rules(self, case_id: str) -> list[dict[str, Any]]:
+        case = self.get_case(case_id)
+        if case is None:
+            raise KeyError(case_id)
+        issues = case["issues"]
+        candidate = case_candidate(case, issues)
+        evaluated: list[dict[str, Any]] = []
+        for stored_rule in self.list_rules():
+            if stored_rule["status"] != RuleStatus.ACTIVE.value:
+                continue
+            rule = QualityRule(
+                title=stored_rule["title"],
+                description=stored_rule["description"],
+                failure_pattern=stored_rule["failure_pattern"],
+                triggering_condition=stored_rule["triggering_condition"],
+                expected_behavior=stored_rule["expected_behavior"],
+                test_case=stored_rule["test_case"],
+            ).activate()
+            result = evaluate_rule(rule, candidate)
+            assert result is not None
+            with self.database.connect() as connection:
+                connection.execute(
+                    "UPDATE quality_rules SET evaluation_result = ? WHERE id = ?",
+                    (result.value, stored_rule["id"]),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO rule_evaluations (rule_id, case_id, result, evaluated_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (stored_rule["id"], case_id, result.value, _now()),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO audit_events (case_id, event_type, payload_json, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        case_id,
+                        "quality_rule_evaluated",
+                        Database.serialize(
+                            {
+                                "rule_id": stored_rule["id"],
+                                "result": result.value,
+                            }
+                        ),
+                        _now(),
+                    ),
+                )
+            evaluated.append(
+                {
+                    "rule_id": stored_rule["id"],
+                    "case_id": case_id,
+                    "rule_title": stored_rule["title"],
+                    "result": result.value,
+                }
+            )
+        return evaluated

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}ContextOps · Review queue{% endblock %}
+{% block content %}
+<main class="stack">
+  <section class="notice">
+    <strong>Offline fictional workspace.</strong>
+    Evidence comes only from the supplied fixture. Confirmed violations, warnings, and unresolved ambiguity are kept separate.
+  </section>
+  <section>
+    <h1>Review queue</h1>
+    <div class="grid">
+      {% for case in cases %}
+      <article class="card">
+        <h2>{{ case.title }}</h2>
+        <p class="muted">Case ID: {{ case.id }}</p>
+        <a href="/cases/{{ case.id }}">Open review</a>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  <section>
+    <h1>Reusable quality rules</h1>
+    {% if rules %}
+    <div class="grid">
+      {% for rule in rules %}
+      <article class="card">
+        <h3>{{ rule.title }}</h3>
+        <p>{{ rule.description }}</p>
+        <p><span class="badge {{ rule.status }}">{{ rule.status }}</span>
+          {% if rule.status == 'draft' %}
+          <button data-action="activate-rule" data-rule-id="{{ rule.id }}">Activate explicitly</button>
+          {% elif rule.status == 'active' %}
+          <button class="secondary" data-action="disable-rule" data-rule-id="{{ rule.id }}">Disable rule</button>
+          {% endif %}
+        </p>
+        <p class="muted">Last evaluation: {{ rule.evaluation_result or 'not evaluated' }}</p>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No rules yet. Create one from a confirmed issue after recording a decision.</p>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}

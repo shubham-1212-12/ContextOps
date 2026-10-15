@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}ContextOps · {{ case.title }}{% endblock %}
+{% block content %}
+<main class="stack">
+  <p><a href="/">← Back to review queue</a></p>
+  <section class="card">
+    <h1>{{ case.title }}</h1>
+    <p class="muted">Fictional case · original proposal is preserved unchanged.</p>
+    <h2>Original scheduling proposal</h2>
+    <pre>{{ case.original_proposal | tojson(indent=2) }}</pre>
+    <h2>Supplied context</h2>
+    <pre>{{ case.context | tojson(indent=2) }}</pre>
+  </section>
+
+  <section>
+    <h2>Contextual findings</h2>
+    <div class="grid">
+      {% for issue in case.issues %}
+      <article class="card">
+        <span class="badge {{ issue.category }}">{{ issue.category | replace('_', ' ') }}</span>
+        <h3>{{ issue.title }}</h3>
+        <p>{{ issue.evidence }}</p>
+        {% if issue.category == 'confirmed_violation' %}
+        <button data-action="draft-rule" data-case-id="{{ case.id }}" data-issue-id="{{ issue.id }}">Create draft quality rule</button>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Human decision</h2>
+    <p class="muted">A rationale is required. The original proposal remains stored even if an edit is later supplied.</p>
+    <form data-decision-form data-case-id="{{ case.id }}">
+      <label for="decision">Decision</label>
+      <select id="decision" name="decision">
+        <option value="reject">Reject proposal</option>
+        <option value="edit">Edit proposal</option>
+        <option value="accept">Accept proposal</option>
+        <option value="defer">Defer decision</option>
+      </select>
+      <label for="rationale">Reviewer rationale</label>
+      <textarea id="rationale" name="rationale" required rows="4" placeholder="Explain the contextual decision..."></textarea>
+      <p><button type="submit">Record decision</button></p>
+    </form>
+    {% if case.decisions %}
+    <h3>Recorded decisions</h3>
+    {% for decision in case.decisions %}
+    <div class="event"><strong>{{ decision.decision }}</strong>: {{ decision.rationale }} <span class="muted">({{ decision.created_at }})</span></div>
+    {% endfor %}
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Rule evaluation on this case</h2>
+    <p class="muted">Only explicitly activated rules are evaluated.</p>
+    <button class="secondary" data-action="evaluate-rules" data-case-id="{{ case.id }}">Evaluate active rules</button>
+    {% if case.evaluations %}
+    {% for evaluation in case.evaluations %}
+    <div class="event"><strong>{{ evaluation.rule_title }}</strong>: {{ evaluation.result }} <span class="muted">({{ evaluation.rule_status }})</span></div>
+    {% endfor %}
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Audit history</h2>
+    {% if case.audit %}
+    {% for event in case.audit %}
+    <div class="card event"><strong>{{ event.event_type }}</strong> <span class="muted">{{ event.created_at }}</span><pre>{{ event.payload | tojson(indent=2) }}</pre></div>
+    {% endfor %}
+    {% else %}
+    <p class="muted">No human action recorded yet.</p>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}
