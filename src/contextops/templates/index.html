@@ -26,6 +26,10 @@
       <article class="card">
         <h3>{{ rule.title }}</h3>
         <p>{{ rule.description }}</p>
+        <p><strong>Failure pattern:</strong> <code>{{ rule.failure_pattern }}</code><br>
+          <strong>Trigger:</strong> {{ rule.triggering_condition }}<br>
+          <strong>Expected behavior:</strong> {{ rule.expected_behavior }}</p>
+        <p><strong>Test case:</strong> <code>{{ rule.test_case }}</code></p>
         <p><span class="badge {{ rule.status }}">{{ rule.status }}</span>
           {% if rule.status == 'draft' %}
           <button data-action="activate-rule" data-rule-id="{{ rule.id }}">Activate explicitly</button>

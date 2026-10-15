@@ -29,7 +29,7 @@ On Windows PowerShell, activate the environment with `.venv\Scripts\Activate.ps1
 make run
 ```
 
-Open <http://127.0.0.1:8000> after the review interface is implemented. The foundation health check is available at <http://127.0.0.1:8000/health>.
+Open <http://127.0.0.1:8000>. The health check is available at <http://127.0.0.1:8000/health>.
 
 ## Test
 
@@ -62,6 +62,20 @@ docker run --rm --entrypoint python contextops:local -m pytest
 ```
 
 The container runs as an unprivileged user. Its SQLite data directory is writable inside the container; mount a local directory at `/app/data` only when persistence across container runs is needed.
+
+## Demonstration workflow
+
+The seeded cases are fictional and deterministic:
+
+1. Open **Quarterly design review proposed after hours**.
+2. Inspect the original proposal, working-hours evidence, and the separate warning and unresolved-ambiguity findings.
+3. Select **Reject proposal**, enter a rationale, and record the decision. The original proposal and audit event remain available.
+4. Create a draft rule from the confirmed working-hours violation. The rule exposes its title, description, failure pattern, triggering condition, expected behavior, test case, evaluation result, and status.
+5. Activate the rule explicitly from the review queue. Rules never become active automatically.
+6. Open **Roadmap review proposed after hours**, choose **Evaluate active rules**, and verify that the activated rule is reported as `matched`.
+7. If needed, disable the rule and verify that later evaluations no longer run it.
+
+The regression test in `tests/test_review_flow.py` executes this same path, including the pre-activation non-evaluation check and the post-activation match.
 
 ## Configuration
 

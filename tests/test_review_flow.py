@@ -44,6 +44,16 @@ def test_end_to_end_rejection_rule_activation_and_regression(tmp_path) -> None:
     assert draft.status_code == 200
     assert draft.json()["status"] == "draft"
     assert draft.json()["evaluation_result"] is None
+    assert {
+        "title",
+        "description",
+        "failure_pattern",
+        "triggering_condition",
+        "expected_behavior",
+        "test_case",
+        "evaluation_result",
+        "status",
+    }.issubset(draft.json())
 
     not_yet_evaluated = client.post(
         "/api/cases/case-similar-outside-hours/evaluate-rules"
