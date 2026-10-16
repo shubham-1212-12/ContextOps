@@ -172,6 +172,31 @@ def test_disabled_rule_is_excluded_from_fresh_results_and_stops_new_audit_events
     assert "No current active-rule results for this case." in page.text
 
 
+def test_disabled_rule_can_be_reactivated_from_home_page(tmp_path) -> None:
+    client = client_for(tmp_path)
+    case_id = "case-outside-hours"
+    case_data = client.get(f"/api/cases/{case_id}").json()
+    issue_id = next(
+        issue["id"]
+        for issue in case_data["issues"]
+        if issue["code"] == "outside_working_hours"
+    )
+    rule = client.post(f"/api/cases/{case_id}/rules", json={"issue_id": issue_id}).json()
+    rule_id = rule["id"]
+    client.post(f"/api/rules/{rule_id}/activate")
+    disabled = client.post(f"/api/rules/{rule_id}/disable")
+    assert disabled.json()["status"] == "disabled"
+
+    page = client.get("/")
+    assert page.status_code == 200
+    assert f'data-action="activate-rule" data-rule-id="{rule_id}"' in page.text
+    assert "Re-activate explicitly" in page.text
+
+    reactivated = client.post(f"/api/rules/{rule_id}/activate")
+    assert reactivated.status_code == 200
+    assert reactivated.json()["status"] == "active"
+
+
 def test_legacy_accept_decision_remains_supported(tmp_path) -> None:
     client = client_for(tmp_path)
 
