@@ -96,6 +96,21 @@ The review queue is the home page. Use <http://127.0.0.1:8000/rules> to manage r
 
 The regression test in `tests/test_review_flow.py` executes this same path, including the pre-activation non-evaluation check and the post-activation match.
 
+## Using ContextOps in a Real Scheduling Workflow (Manual Prototype)
+
+ContextOps currently supports a manual, offline prototype workflow for reviewing user-submitted scheduling proposals:
+
+1. Open the review queue and choose **New case**.
+2. Enter the proposed event, an ISO-8601 start time with an explicit timezone offset, duration, timezone, and the context known to the reviewer.
+3. Submit the case. ContextOps stores the original proposal, runs deterministic checks, records a `case_created` audit event, and opens the normal case-review page.
+4. Review confirmed violations, warnings, and unresolved ambiguity. Missing calendar evidence is shown as uncertainty; ContextOps does not invent availability.
+5. Record an approve, edit, reject, defer, or escalate decision with a rationale. Edited proposals are stored separately; the original proposal remains unchanged.
+6. Inspect the collapsed audit history for case creation, decisions, quality-rule changes, and rule evaluations.
+
+This manual prototype works without an AI API, live calendar, authentication, or external service. Quality rules can be created from confirmed issues and explicitly activated for later cases.
+
+Future integrations may add AI-agent proposal generation, live calendar availability, authentication, multi-user collaboration, and scheduling execution. Those integrations are not part of the current workflow.
+
 ## Configuration
 
 Copy `.env.example` to `.env` for local configuration. `.env` is ignored by Git. The MVP accepts only fictional scheduling data and does not require an API key or external service.

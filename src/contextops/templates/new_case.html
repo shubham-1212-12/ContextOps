@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}ContextOps · New case{% endblock %}
+{% block content %}
+<main id="main" class="page-shell case-shell">
+  <a class="back-link" href="/">← Back to review queue</a>
+
+  <section class="page-heading" aria-labelledby="new-case-title">
+    <p class="eyebrow">Manual prototype</p>
+    <h1 id="new-case-title">Submit a scheduling case</h1>
+    <p class="hero-copy">Enter the proposal and the context you know. ContextOps will run deterministic checks before opening the review.</p>
+  </section>
+
+  <section class="dark-card new-case-card">
+    <form class="decision-form" data-new-case-form>
+      <div class="form-section">
+        <p class="eyebrow">Proposed action</p>
+        <div class="form-grid">
+          <div class="field-full">
+            <label for="title">Case title</label>
+            <input id="title" name="title" type="text" required maxlength="160" placeholder="Quarterly planning review">
+          </div>
+          <div class="field-full">
+            <label for="event">Event name</label>
+            <input id="event" name="event" type="text" required maxlength="160" placeholder="Planning review">
+          </div>
+          <div class="field-full">
+            <label for="start">Start datetime with offset</label>
+            <input id="start" name="start" type="text" required placeholder="2026-10-20T14:00:00+05:30">
+            <p class="form-help">Use ISO-8601 with an explicit offset; for example, <code>+05:30</code> or <code>Z</code>.</p>
+          </div>
+          <div>
+            <label for="duration_minutes">Duration in minutes</label>
+            <input id="duration_minutes" name="duration_minutes" type="number" min="1" step="1" required placeholder="60">
+          </div>
+          <div>
+            <label for="proposal_timezone">Proposal timezone</label>
+            <input id="proposal_timezone" name="proposal_timezone" type="text" required placeholder="Asia/Kolkata">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <p class="eyebrow">Known context</p>
+        <div class="form-grid">
+          <div>
+            <label for="context_timezone">Context timezone</label>
+            <input id="context_timezone" name="context_timezone" type="text" required placeholder="Asia/Kolkata">
+          </div>
+          <div>
+            <label for="calendar_status">Calendar evidence</label>
+            <select id="calendar_status" name="calendar_status" required>
+              <option value="not_provided">Not provided</option>
+              <option value="provided">Provided in this case</option>
+            </select>
+          </div>
+          <div>
+            <label for="working_hours_start">Working hours start</label>
+            <input id="working_hours_start" name="working_hours_start" type="time" value="09:00" required>
+          </div>
+          <div>
+            <label for="working_hours_end">Working hours end</label>
+            <input id="working_hours_end" name="working_hours_end" type="time" value="17:00" required>
+          </div>
+          <div class="field-full">
+            <label for="constraints">Constraints (one per line)</label>
+            <textarea id="constraints" name="constraints" rows="3" placeholder="Keep the review within working hours…"></textarea>
+          </div>
+          <div class="field-full">
+            <label for="blocked_time">Blocked time JSON</label>
+            <textarea id="blocked_time" name="blocked_time" rows="4">[]</textarea>
+            <p class="form-help">Use <code>[]</code> when no blocked interval is known. Each item needs <code>start</code> and <code>end</code> ISO-8601 datetimes with offsets.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <a class="button button-secondary" href="/">Cancel</a>
+        <button type="submit">Create case <span aria-hidden="true">→</span></button>
+      </div>
+    </form>
+  </section>
+</main>
+{% endblock %}

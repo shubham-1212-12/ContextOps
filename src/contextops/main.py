@@ -89,6 +89,14 @@ def create_app(database_path: str | None = None) -> FastAPI:
             context={"rules": service.list_rules()},
         )
 
+    @app.get("/cases/new", response_class=HTMLResponse)
+    def new_case_page(request: Request) -> Any:
+        return templates.TemplateResponse(
+            request=request,
+            name="new_case.html",
+            context={},
+        )
+
     @app.get("/cases/{case_id}", response_class=HTMLResponse)
     def case_page(request: Request, case_id: str) -> Any:
         service: ContextOpsService = request.app.state.service
@@ -115,6 +123,27 @@ def create_app(database_path: str | None = None) -> FastAPI:
     @app.get("/api/rules")
     def rules_data(request: Request) -> list[dict[str, Any]]:
         return request.app.state.service.list_rules()
+
+    @app.post("/api/cases")
+    async def create_case(request: Request) -> JSONResponse:
+        try:
+            payload = await request.json()
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail="Request body must be valid JSON") from error
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Request body must be an object")
+        try:
+            case = request.app.state.service.create_case(
+                title=payload.get("title"),
+                original_proposal=payload.get("original_proposal"),
+                context=payload.get("context"),
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return JSONResponse(
+            {"case_id": case["id"], "case": case},
+            status_code=201,
+        )
 
     @app.post("/api/cases/{case_id}/decision")
     async def record_decision(request: Request, case_id: str) -> JSONResponse:

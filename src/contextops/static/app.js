@@ -75,3 +75,57 @@ if (decisionForm) {
     }
   });
 }
+
+const newCaseForm = document.querySelector("[data-new-case-form]");
+if (newCaseForm) {
+  newCaseForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(newCaseForm);
+    const submitButton = newCaseForm.querySelector("button[type=submit]");
+    const originalLabel = submitButton.textContent.trim();
+    try {
+      let blockedTime;
+      try {
+        const blockedText = String(form.get("blocked_time") || "").trim();
+        if (!blockedText) throw new Error("Blocked time is required; use [] when none is known.");
+        blockedTime = JSON.parse(blockedText);
+      } catch (_error) {
+        throw new Error("Blocked time must be valid JSON.");
+      }
+      if (!Array.isArray(blockedTime)) {
+        throw new Error("Blocked time must be a JSON array.");
+      }
+      const constraints = String(form.get("constraints") || "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      submitButton.disabled = true;
+      submitButton.textContent = "Creating…";
+      showStatus("Creating case…");
+      const response = await postJson("/api/cases", {
+        title: form.get("title"),
+        original_proposal: {
+          event: form.get("event"),
+          start: form.get("start"),
+          duration_minutes: Number(form.get("duration_minutes")),
+          timezone: form.get("proposal_timezone"),
+        },
+        context: {
+          timezone: form.get("context_timezone"),
+          working_hours: {
+            start: form.get("working_hours_start"),
+            end: form.get("working_hours_end"),
+          },
+          calendar_data: { status: form.get("calendar_status") },
+          constraints,
+          blocked_time: blockedTime,
+        },
+      });
+      window.location.assign(`/cases/${response.case_id}`);
+    } catch (error) {
+      submitButton.disabled = false;
+      submitButton.textContent = originalLabel;
+      showError(error);
+    }
+  });
+}

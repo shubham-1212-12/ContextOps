@@ -142,6 +142,15 @@ button:disabled { cursor: wait; opacity: .65; }
 .decision-card { margin-bottom: 1rem; }
 .decision-card > .muted { color: var(--muted); font-size: .9rem; }
 .decision-form { max-width: 48rem; }
+.new-case-card { max-width: 760px; padding: 1.35rem; }
+.form-section + .form-section { border-top: 1px solid var(--border); margin-top: 1.5rem; padding-top: 1.5rem; }
+.form-grid { display: grid; gap: .9rem 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.field-full { grid-column: 1 / -1; }
+.form-grid input { background: #080a0c; border: 1px solid var(--border-strong); border-radius: 7px; color: var(--text); padding: .7rem; width: 100%; }
+.form-grid input::placeholder { color: #66717f; }
+.form-help { color: var(--subtle); font-size: .76rem; margin: .35rem 0 0; }
+.form-help code { color: #c8dcf2; }
+.form-actions { display: flex; gap: .65rem; justify-content: flex-end; margin-top: 1.4rem; }
 label { color: #cbd3dc; display: block; font-size: .82rem; font-weight: 750; margin: .9rem 0 .3rem; }
 textarea, select { background: #080a0c; border: 1px solid var(--border-strong); border-radius: 7px; color: var(--text); padding: .7rem; width: 100%; }
 textarea::placeholder { color: #66717f; }
@@ -177,6 +186,10 @@ pre { background: #080a0c; border: 1px solid var(--border); border-radius: 8px; 
   .section-note { margin-top: -.5rem; }
   .case-heading { gap: 1rem; }
   .case-preservation { align-self: flex-start; }
+  .form-grid { grid-template-columns: 1fr; }
+  .field-full { grid-column: auto; }
+  .form-actions { justify-content: stretch; }
+  .form-actions > * { flex: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

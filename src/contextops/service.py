@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from contextops.case_validation import validate_case_creation
 from contextops.database import Database, read_json
 from contextops.detector import case_candidate, detect_issues
 from contextops.fixtures import fictional_cases
@@ -123,6 +125,78 @@ class ContextOpsService:
                 ],
                 "evaluations": [dict(row) for row in evaluations],
             }
+
+    def create_case(
+        self,
+        title: str,
+        original_proposal: dict[str, Any],
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Validate and persist one manually supplied scheduling case atomically."""
+
+        validate_case_creation(title, original_proposal, context)
+        issues = detect_issues(original_proposal, context)
+        with self.database.session() as connection:
+            for _ in range(10):
+                case_id = f"case-{uuid.uuid4().hex}"
+                if connection.execute(
+                    "SELECT 1 FROM scheduling_cases WHERE id = ?", (case_id,)
+                ).fetchone() is None:
+                    break
+            else:
+                raise RuntimeError("could not generate a unique case id")
+
+            connection.execute(
+                """
+                INSERT INTO scheduling_cases (id, title, original_proposal_json, context_json)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    case_id,
+                    title,
+                    Database.serialize(original_proposal),
+                    Database.serialize(context),
+                ),
+            )
+            for index, issue in enumerate(issues):
+                issue_id = f"{case_id}:{issue['code']}"
+                if connection.execute(
+                    "SELECT 1 FROM detected_issues WHERE id = ?", (issue_id,)
+                ).fetchone() is not None:
+                    issue_id = f"{case_id}:{issue['code']}:{index}"
+                connection.execute(
+                    """
+                    INSERT INTO detected_issues
+                        (id, case_id, code, category, title, evidence, severity)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        issue_id,
+                        case_id,
+                        issue["code"],
+                        issue["category"],
+                        issue["title"],
+                        issue["evidence"],
+                        issue["severity"],
+                    ),
+                )
+            connection.execute(
+                """
+                INSERT INTO audit_events (case_id, event_type, payload_json, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    case_id,
+                    "case_created",
+                    Database.serialize(
+                        {"case_id": case_id, "title": title, "issue_count": len(issues)}
+                    ),
+                    _now(),
+                ),
+            )
+        created_case = self.get_case(case_id)
+        assert created_case is not None
+        return created_case
 
     def record_decision(
         self,
