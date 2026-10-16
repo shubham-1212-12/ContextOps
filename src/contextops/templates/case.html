@@ -55,18 +55,21 @@
   </section>
 
   <section class="card">
-    <h2>Rule evaluation on this case</h2>
-    <p class="muted">Only explicitly activated rules are evaluated.</p>
+    <h2>Current active-rule results</h2>
+    <p class="muted">Only explicitly activated rules are evaluated. Disabled rules and older results are not shown here.</p>
     <button class="secondary" data-action="evaluate-rules" data-case-id="{{ case.id }}">Evaluate active rules</button>
     {% if case.evaluations %}
     {% for evaluation in case.evaluations %}
     <div class="event"><strong>{{ evaluation.rule_title }}</strong>: {{ evaluation.result }} <span class="muted">({{ evaluation.rule_status }})</span></div>
     {% endfor %}
+    {% else %}
+    <p class="muted">No current active-rule results for this case.</p>
     {% endif %}
   </section>
 
   <section>
     <h2>Audit history</h2>
+    <p class="muted">This append-only history includes earlier evaluations made while rules were active. Repeated evaluation events are historical records; disabled rules do not create new evaluation events.</p>
     {% if case.audit %}
     {% for event in case.audit %}
     <div class="card event"><strong>{{ event.event_type }}</strong> <span class="muted">{{ event.created_at }}</span><pre>{{ event.payload | tojson(indent=2) }}</pre></div>

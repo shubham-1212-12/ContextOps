@@ -25,7 +25,7 @@ class ContextOpsService:
         self._seed_if_empty()
 
     def _seed_if_empty(self) -> None:
-        with self.database.connect() as connection:
+        with self.database.session() as connection:
             if connection.execute("SELECT 1 FROM scheduling_cases LIMIT 1").fetchone():
                 return
             for case in fictional_cases():
@@ -60,14 +60,14 @@ class ContextOpsService:
                     )
 
     def list_cases(self) -> list[dict[str, Any]]:
-        with self.database.connect() as connection:
+        with self.database.session() as connection:
             rows = connection.execute(
                 "SELECT id, title FROM scheduling_cases ORDER BY id"
             ).fetchall()
             return [dict(row) for row in rows]
 
     def get_case(self, case_id: str) -> dict[str, Any] | None:
-        with self.database.connect() as connection:
+        with self.database.session() as connection:
             case_row = connection.execute(
                 "SELECT * FROM scheduling_cases WHERE id = ?", (case_id,)
             ).fetchone()
@@ -84,12 +84,19 @@ class ContextOpsService:
             ).fetchall()
             evaluations = connection.execute(
                 """
-                SELECT rule_evaluations.*, quality_rules.title AS rule_title,
+                SELECT current_evaluations.*, quality_rules.title AS rule_title,
                        quality_rules.status AS rule_status
-                FROM rule_evaluations
-                JOIN quality_rules ON quality_rules.id = rule_evaluations.rule_id
-                WHERE rule_evaluations.case_id = ?
-                ORDER BY rule_evaluations.id
+                FROM rule_evaluations AS current_evaluations
+                JOIN quality_rules ON quality_rules.id = current_evaluations.rule_id
+                WHERE current_evaluations.case_id = ?
+                  AND quality_rules.status = 'active'
+                  AND current_evaluations.id = (
+                      SELECT MAX(latest_evaluation.id)
+                      FROM rule_evaluations AS latest_evaluation
+                      WHERE latest_evaluation.rule_id = current_evaluations.rule_id
+                        AND latest_evaluation.case_id = current_evaluations.case_id
+                  )
+                ORDER BY current_evaluations.id
                 """,
                 (case_id,),
             ).fetchall()
@@ -137,7 +144,7 @@ class ContextOpsService:
         if self.get_case(case_id) is None:
             raise KeyError(case_id)
         created_at = _now()
-        with self.database.connect() as connection:
+        with self.database.session() as connection:
             cursor = connection.execute(
                 """
                 INSERT INTO human_decisions
@@ -169,7 +176,7 @@ class ContextOpsService:
         return {"id": decision_id, **payload, "created_at": created_at}
 
     def create_rule_from_issue(self, case_id: str, issue_id: str) -> dict[str, Any]:
-        with self.database.connect() as connection:
+        with self.database.session() as connection:
             issue = connection.execute(
                 "SELECT * FROM detected_issues WHERE id = ? AND case_id = ?",
                 (issue_id, case_id),
@@ -226,19 +233,19 @@ class ContextOpsService:
         return self.get_rule(int(rule_id))
 
     def list_rules(self) -> list[dict[str, Any]]:
-        with self.database.connect() as connection:
+        with self.database.session() as connection:
             rows = connection.execute("SELECT * FROM quality_rules ORDER BY id").fetchall()
             return [dict(row) for row in rows]
 
     def get_rule(self, rule_id: int) -> dict[str, Any] | None:
-        with self.database.connect() as connection:
+        with self.database.session() as connection:
             row = connection.execute(
                 "SELECT * FROM quality_rules WHERE id = ?", (rule_id,)
             ).fetchone()
             return dict(row) if row else None
 
     def activate_rule(self, rule_id: int) -> dict[str, Any]:
-        with self.database.connect() as connection:
+        with self.database.session() as connection:
             row = connection.execute(
                 """
                 SELECT quality_rules.*, detected_issues.case_id AS source_case_id
@@ -268,7 +275,7 @@ class ContextOpsService:
         return self.get_rule(rule_id)
 
     def disable_rule(self, rule_id: int) -> dict[str, Any]:
-        with self.database.connect() as connection:
+        with self.database.session() as connection:
             row = connection.execute(
                 """
                 SELECT quality_rules.id, detected_issues.case_id AS source_case_id
@@ -318,7 +325,7 @@ class ContextOpsService:
             ).activate()
             result = evaluate_rule(rule, candidate)
             assert result is not None
-            with self.database.connect() as connection:
+            with self.database.session() as connection:
                 connection.execute(
                     "UPDATE quality_rules SET evaluation_result = ? WHERE id = ?",
                     (result.value, stored_rule["id"]),

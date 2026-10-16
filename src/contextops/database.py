@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 SCHEMA = """
@@ -90,8 +91,23 @@ class Database:
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
+    @contextmanager
+    def session(self) -> Iterator[sqlite3.Connection]:
+        """Open, commit or roll back, and always close one database session."""
+
+        connection = self.connect()
+        try:
+            yield connection
+        except BaseException:
+            connection.rollback()
+            raise
+        else:
+            connection.commit()
+        finally:
+            connection.close()
+
     def initialize(self) -> None:
-        with self.connect() as connection:
+        with self.session() as connection:
             connection.executescript(SCHEMA)
 
     @staticmethod

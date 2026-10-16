@@ -113,6 +113,65 @@ def test_edit_requires_an_edited_proposal(tmp_path) -> None:
     assert response.json()["detail"] == "edited_proposal is required when decision is edit"
 
 
+def test_disabled_rule_is_excluded_from_fresh_results_and_stops_new_audit_events(
+    tmp_path,
+) -> None:
+    client = client_for(tmp_path)
+    case_id = "case-outside-hours"
+    regression_case_id = "case-similar-outside-hours"
+    case_data = client.get(f"/api/cases/{case_id}").json()
+    issue_id = next(
+        issue["id"]
+        for issue in case_data["issues"]
+        if issue["code"] == "outside_working_hours"
+    )
+    rule = client.post(f"/api/cases/{case_id}/rules", json={"issue_id": issue_id}).json()
+    rule_id = rule["id"]
+    client.post(f"/api/rules/{rule_id}/activate")
+
+    assert client.post(f"/api/cases/{regression_case_id}/evaluate-rules").json() == {
+        "evaluations": [
+            {
+                "rule_id": rule_id,
+                "case_id": regression_case_id,
+                "rule_title": "Prevent: Proposal is outside stated working hours",
+                "result": "matched",
+            }
+        ]
+    }
+    assert client.post(f"/api/cases/{regression_case_id}/evaluate-rules").json()[
+        "evaluations"
+    ][0]["result"] == "matched"
+
+    active_case = client.get(f"/api/cases/{regression_case_id}").json()
+    assert len(active_case["evaluations"]) == 1
+    evaluation_event_count = sum(
+        event["event_type"] == "quality_rule_evaluated"
+        for event in active_case["audit"]
+    )
+    assert evaluation_event_count == 2
+
+    disabled = client.post(f"/api/rules/{rule_id}/disable")
+    assert disabled.status_code == 200
+    assert disabled.json()["status"] == "disabled"
+
+    for _ in range(3):
+        assert client.post(
+            f"/api/cases/{regression_case_id}/evaluate-rules"
+        ).json() == {"evaluations": []}
+
+    disabled_case = client.get(f"/api/cases/{regression_case_id}").json()
+    assert disabled_case["evaluations"] == []
+    assert sum(
+        event["event_type"] == "quality_rule_evaluated"
+        for event in disabled_case["audit"]
+    ) == evaluation_event_count
+    page = client.get(f"/cases/{regression_case_id}")
+    assert page.status_code == 200
+    assert "matched</strong>" not in page.text
+    assert "No current active-rule results for this case." in page.text
+
+
 def test_legacy_accept_decision_remains_supported(tmp_path) -> None:
     client = client_for(tmp_path)
 
