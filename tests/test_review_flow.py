@@ -216,6 +216,30 @@ def test_dashboard_prioritizes_review_queue_and_separates_quality_rules(tmp_path
     assert "Quality rules" in rules_page.text
 
 
+def test_queue_navigation_and_both_case_pages_keep_details_secondary(tmp_path) -> None:
+    client = client_for(tmp_path)
+
+    dashboard = client.get("/")
+    assert dashboard.status_code == 200
+    assert dashboard.text.count('href="/rules"') == 1
+    assert 'href="/">Review queue</a>' in dashboard.text
+    assert client.get("/").status_code == 200
+
+    for case_id in ("case-outside-hours", "case-similar-outside-hours"):
+        case_page = client.get(f"/cases/{case_id}")
+        assert case_page.status_code == 200
+        assert 'class="back-link" href="/"' in case_page.text
+        assert "Original scheduling proposal" in case_page.text
+        assert "Contextual findings" in case_page.text
+        assert "Record your decision" in case_page.text
+        assert "View raw proposal JSON" in case_page.text
+        assert "View supplied context" in case_page.text
+        assert "Current active-rule results" in case_page.text
+        assert "Audit history" in case_page.text
+        assert "<details" in case_page.text
+        assert client.get("/").status_code == 200
+
+
 def test_legacy_accept_decision_remains_supported(tmp_path) -> None:
     client = client_for(tmp_path)
 

@@ -1,37 +1,78 @@
 {% extends "base.html" %}
 {% block title %}ContextOps · {{ case.title }}{% endblock %}
 {% block content %}
-<main class="stack">
-  <p><a href="/">← Back to review queue</a></p>
-  <section class="card">
-    <h1>{{ case.title }}</h1>
-    <p class="muted">Fictional case · original proposal is preserved unchanged.</p>
-    <h2>Original scheduling proposal</h2>
-    <pre>{{ case.original_proposal | tojson(indent=2) }}</pre>
-    <h2>Supplied context</h2>
-    <pre>{{ case.context | tojson(indent=2) }}</pre>
+<main id="main" class="page-shell case-shell">
+  <a class="back-link" href="/">← Back to review queue</a>
+
+  <header class="case-heading">
+    <div>
+      <p class="eyebrow">Fictional scheduling case</p>
+      <h1>{{ case.title }}</h1>
+      <p class="hero-copy">Review the proposal, confirm the evidence, then record a human decision.</p>
+    </div>
+    <span class="case-preservation">Original proposal preserved</span>
+  </header>
+
+  <section class="proposal-card dark-card" aria-labelledby="proposal-title">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Proposed action</p>
+        <h2 id="proposal-title">Original scheduling proposal</h2>
+      </div>
+      <span class="proposal-timezone">{{ case.original_proposal.timezone }}</span>
+    </div>
+    <div class="proposal-summary">
+      <div class="proposal-event">{{ case.original_proposal.event }}</div>
+      <dl class="proposal-facts">
+        <div><dt>Proposed start</dt><dd>{{ case.original_proposal.start }}</dd></div>
+        <div><dt>Duration</dt><dd>{{ case.original_proposal.duration_minutes }} minutes</dd></div>
+        <div><dt>Timezone</dt><dd>{{ case.original_proposal.timezone }}</dd></div>
+      </dl>
+    </div>
+    <div class="secondary-stack">
+      <details class="secondary-panel">
+        <summary>View raw proposal JSON</summary>
+        <pre>{{ case.original_proposal | tojson(indent=2) }}</pre>
+      </details>
+      <details class="secondary-panel">
+        <summary>View supplied context</summary>
+        <pre>{{ case.context | tojson(indent=2) }}</pre>
+      </details>
+    </div>
   </section>
 
-  <section>
-    <h2>Contextual findings</h2>
-    <div class="grid">
+  <section class="primary-section" aria-labelledby="findings-title">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Evidence check</p>
+        <h2 id="findings-title">Contextual findings</h2>
+      </div>
+      <p class="section-note">Confirmed issues are separated from warnings and ambiguity.</p>
+    </div>
+    <div class="finding-grid">
       {% for issue in case.issues %}
-      <article class="card">
+      <article class="finding-card">
         <span class="badge {{ issue.category }}">{{ issue.category | replace('_', ' ') }}</span>
         <h3>{{ issue.title }}</h3>
         <p>{{ issue.evidence }}</p>
         {% if issue.category == 'confirmed_violation' %}
-        <button data-action="draft-rule" data-case-id="{{ case.id }}" data-issue-id="{{ issue.id }}">Create draft quality rule</button>
+        <button class="secondary" data-action="draft-rule" data-case-id="{{ case.id }}" data-issue-id="{{ issue.id }}">Create draft quality rule</button>
         {% endif %}
       </article>
       {% endfor %}
     </div>
   </section>
 
-  <section class="card">
-    <h2>Human decision</h2>
-    <p class="muted">A rationale is required. The original proposal remains stored even if an edit is later supplied.</p>
-    <form data-decision-form data-case-id="{{ case.id }}">
+  <section class="decision-card dark-card" aria-labelledby="decision-title">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Human review</p>
+        <h2 id="decision-title">Record your decision</h2>
+      </div>
+      <p class="section-note">A rationale is required for every decision.</p>
+    </div>
+    <p class="muted">The original proposal remains stored even if an edited proposal is supplied.</p>
+    <form class="decision-form" data-decision-form data-case-id="{{ case.id }}">
       <label for="decision">Decision</label>
       <select id="decision" name="decision">
         <option value="approve">Approve proposal</option>
@@ -41,42 +82,45 @@
         <option value="escalate">Escalate for further review</option>
       </select>
       <label for="rationale">Reviewer rationale</label>
-      <textarea id="rationale" name="rationale" required rows="4" placeholder="Explain the contextual decision..."></textarea>
+      <textarea id="rationale" name="rationale" required rows="4" placeholder="Explain the contextual decision…"></textarea>
       <label for="edited_proposal">Edited proposal JSON (required for an edited proposal)</label>
-      <textarea id="edited_proposal" name="edited_proposal" rows="5" placeholder='{"event": "...", "start": "..."}'></textarea>
-      <p><button type="submit">Record decision</button></p>
+      <textarea id="edited_proposal" name="edited_proposal" rows="5" placeholder='{"event": "…", "start": "…"}'></textarea>
+      <button class="decision-submit" type="submit">Record decision</button>
     </form>
     {% if case.decisions %}
-    <h3>Recorded decisions</h3>
-    {% for decision in case.decisions %}
-    <div class="event"><strong>{{ decision.decision }}</strong>: {{ decision.rationale }} <span class="muted">({{ decision.created_at }})</span></div>
-    {% endfor %}
+    <details class="secondary-panel recorded-decisions">
+      <summary>View recorded decisions ({{ case.decisions | length }})</summary>
+      {% for decision in case.decisions %}
+      <div class="event"><strong>{{ decision.decision }}</strong>: {{ decision.rationale }} <span class="muted">({{ decision.created_at }})</span></div>
+      {% endfor %}
+    </details>
     {% endif %}
   </section>
 
-  <section class="card">
-    <h2>Current active-rule results</h2>
-    <p class="muted">Only explicitly activated rules are evaluated. Disabled rules and older results are not shown here.</p>
-    <button class="secondary" data-action="evaluate-rules" data-case-id="{{ case.id }}">Evaluate active rules</button>
-    {% if case.evaluations %}
-    {% for evaluation in case.evaluations %}
-    <div class="event"><strong>{{ evaluation.rule_title }}</strong>: {{ evaluation.result }} <span class="muted">({{ evaluation.rule_status }})</span></div>
-    {% endfor %}
-    {% else %}
-    <p class="muted">No current active-rule results for this case.</p>
-    {% endif %}
-  </section>
-
-  <section>
-    <h2>Audit history</h2>
-    <p class="muted">This append-only history includes earlier evaluations made while rules were active. Repeated evaluation events are historical records; disabled rules do not create new evaluation events.</p>
-    {% if case.audit %}
-    {% for event in case.audit %}
-    <div class="card event"><strong>{{ event.event_type }}</strong> <span class="muted">{{ event.created_at }}</span><pre>{{ event.payload | tojson(indent=2) }}</pre></div>
-    {% endfor %}
-    {% else %}
-    <p class="muted">No human action recorded yet.</p>
-    {% endif %}
+  <section class="secondary-stack case-secondary" aria-label="Technical details">
+    <details class="secondary-panel">
+      <summary>Current active-rule results{% if case.evaluations %} ({{ case.evaluations | length }}){% endif %}</summary>
+      <p class="muted">Only explicitly activated rules are evaluated. Disabled rules and older results are not shown here.</p>
+      <button class="secondary" data-action="evaluate-rules" data-case-id="{{ case.id }}">Evaluate active rules</button>
+      {% if case.evaluations %}
+      {% for evaluation in case.evaluations %}
+      <div class="event"><strong>{{ evaluation.rule_title }}</strong>: {{ evaluation.result }} <span class="muted">({{ evaluation.rule_status }})</span></div>
+      {% endfor %}
+      {% else %}
+      <p class="muted">No current active-rule results for this case.</p>
+      {% endif %}
+    </details>
+    <details class="secondary-panel">
+      <summary>Audit history{% if case.audit %} ({{ case.audit | length }}){% endif %}</summary>
+      <p class="muted">This append-only history includes earlier evaluations made while rules were active.</p>
+      {% if case.audit %}
+      {% for event in case.audit %}
+      <div class="event"><strong>{{ event.event_type }}</strong> <span class="muted">{{ event.created_at }}</span><pre>{{ event.payload | tojson(indent=2) }}</pre></div>
+      {% endfor %}
+      {% else %}
+      <p class="muted">No human action recorded yet.</p>
+      {% endif %}
+    </details>
   </section>
 </main>
 {% endblock %}

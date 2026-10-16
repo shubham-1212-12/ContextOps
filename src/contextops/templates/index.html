@@ -10,7 +10,6 @@
     </div>
     <div class="hero-actions">
       <span class="count-pill"><strong>{{ cases | length }}</strong> fictional cases</span>
-      <a class="button button-secondary" href="/rules">Manage quality rules <span aria-hidden="true">↗</span></a>
     </div>
   </section>
 
@@ -53,13 +52,5 @@
     {% endif %}
   </section>
 
-  <section class="rules-callout" aria-labelledby="rules-callout-title">
-    <div>
-      <p class="eyebrow">Reusable safeguards</p>
-      <h2 id="rules-callout-title">Quality rules live separately</h2>
-      <p class="muted">Activate, disable, and inspect evaluation history without crowding the review queue.</p>
-    </div>
-    <a class="text-link" href="/rules">Open quality rules <span aria-hidden="true">→</span></a>
-  </section>
 </main>
 {% endblock %}
