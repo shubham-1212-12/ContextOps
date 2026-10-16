@@ -3,11 +3,28 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f7fb">
     <title>{% block title %}ContextOps{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
   </head>
   <body>
-    <header><a href="/">ContextOps</a><span class="muted"> · Human review for scheduling actions</span></header>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="/" translate="no">
+          <span class="brand-mark" aria-hidden="true">C</span>
+          <span>
+            <strong>ContextOps</strong>
+            <small>Human review for scheduling actions</small>
+          </span>
+        </a>
+        <nav class="site-nav" aria-label="Primary navigation">
+          <a href="/">Review queue</a>
+          <a href="/rules">Quality rules</a>
+        </nav>
+      </div>
+    </header>
+    <div id="app-status" class="status-message" role="status" aria-live="polite"></div>
     {% block content %}{% endblock %}
     <script src="{{ url_for('static', path='app.js') }}"></script>
   </body>

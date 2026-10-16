@@ -187,7 +187,7 @@ def test_disabled_rule_can_be_reactivated_from_home_page(tmp_path) -> None:
     disabled = client.post(f"/api/rules/{rule_id}/disable")
     assert disabled.json()["status"] == "disabled"
 
-    page = client.get("/")
+    page = client.get("/rules")
     assert page.status_code == 200
     assert f'data-action="activate-rule" data-rule-id="{rule_id}"' in page.text
     assert "Re-activate explicitly" in page.text
@@ -195,6 +195,25 @@ def test_disabled_rule_can_be_reactivated_from_home_page(tmp_path) -> None:
     reactivated = client.post(f"/api/rules/{rule_id}/activate")
     assert reactivated.status_code == 200
     assert reactivated.json()["status"] == "active"
+
+
+def test_dashboard_prioritizes_review_queue_and_separates_quality_rules(tmp_path) -> None:
+    client = client_for(tmp_path)
+
+    dashboard = client.get("/")
+    assert dashboard.status_code == 200
+    assert "Review queue" in dashboard.text
+    assert "Review case" in dashboard.text
+    assert "Quarterly design review proposed after hours" in dashboard.text
+    assert "1 confirmed" in dashboard.text
+    assert "1 warning" in dashboard.text
+    assert "1 unresolved" in dashboard.text
+    assert 'href="/rules"' in dashboard.text
+    assert "Failure pattern" not in dashboard.text
+
+    rules_page = client.get("/rules")
+    assert rules_page.status_code == 200
+    assert "Quality rules" in rules_page.text
 
 
 def test_legacy_accept_decision_remains_supported(tmp_path) -> None:

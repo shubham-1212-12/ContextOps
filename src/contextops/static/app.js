@@ -10,7 +10,14 @@ async function postJson(url, payload) {
 }
 
 function showError(error) {
+  const status = document.querySelector("#app-status");
+  if (status) status.textContent = error.message;
   window.alert(error.message);
+}
+
+function showStatus(message) {
+  const status = document.querySelector("#app-status");
+  if (status) status.textContent = message;
 }
 
 document.addEventListener("click", (event) => {
@@ -18,6 +25,9 @@ document.addEventListener("click", (event) => {
   if (!button) return;
   const action = button.dataset.action;
   button.disabled = true;
+  const originalLabel = button.textContent.trim();
+  button.textContent = "Updating…";
+  showStatus("Updating…");
   let request;
   if (action === "draft-rule") {
     request = postJson(`/api/cases/${button.dataset.caseId}/rules`, {
@@ -30,7 +40,13 @@ document.addEventListener("click", (event) => {
   } else if (action === "evaluate-rules") {
     request = postJson(`/api/cases/${button.dataset.caseId}/evaluate-rules`);
   }
-  if (request) request.then(() => window.location.reload()).catch(showError);
+  if (request) {
+    request.then(() => window.location.reload()).catch((error) => {
+      button.disabled = false;
+      button.textContent = originalLabel;
+      showError(error);
+    });
+  }
 });
 
 const decisionForm = document.querySelector("[data-decision-form]");

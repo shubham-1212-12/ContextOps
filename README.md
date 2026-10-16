@@ -92,6 +92,8 @@ The seeded cases are fictional and deterministic:
 6. Open **Roadmap review proposed after hours**, choose **Evaluate active rules**, and verify that the activated rule is reported as `matched`.
 7. If needed, disable the rule and verify that later evaluations no longer run it.
 
+The review queue is the home page. Use <http://127.0.0.1:8000/rules> to manage reusable quality rules separately from the case queue.
+
 The regression test in `tests/test_review_flow.py` executes this same path, including the pre-activation non-evaluation check and the post-activation match.
 
 ## Configuration

@@ -20,6 +20,47 @@ BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
+def _review_cards(service: ContextOpsService) -> list[dict[str, Any]]:
+    """Build compact dashboard summaries without changing the case API."""
+
+    cards: list[dict[str, Any]] = []
+    for summary in service.list_cases():
+        case = service.get_case(summary["id"])
+        if case is None:
+            continue
+        issues = case["issues"]
+        confirmed = [issue for issue in issues if issue["category"] == "confirmed_violation"]
+        warnings = [issue for issue in issues if issue["category"] == "warning"]
+        ambiguities = [
+            issue for issue in issues if issue["category"] == "unresolved_ambiguity"
+        ]
+        latest_decision = case["decisions"][-1]["decision"] if case["decisions"] else None
+        decision_labels = {
+            "approve": "Approved",
+            "accept": "Accepted",
+            "edit": "Edited",
+            "reject": "Rejected",
+            "defer": "Deferred",
+            "escalate": "Escalated",
+        }
+        cards.append(
+            {
+                **summary,
+                "review_status": decision_labels.get(latest_decision, "Needs review"),
+                "review_status_class": "status-reviewed" if latest_decision else "status-pending",
+                "issue_headline": (
+                    confirmed[0]["title"]
+                    if confirmed
+                    else "No confirmed violation detected"
+                ),
+                "confirmed_count": len(confirmed),
+                "warning_count": len(warnings),
+                "ambiguity_count": len(ambiguities),
+            }
+        )
+    return cards
+
+
 def create_app(database_path: str | None = None) -> FastAPI:
     app = FastAPI(title="ContextOps", version=__version__)
     path = database_path or os.getenv("DATABASE_PATH", "data/contextops.db")
@@ -36,7 +77,16 @@ def create_app(database_path: str | None = None) -> FastAPI:
         return templates.TemplateResponse(
             request=request,
             name="index.html",
-            context={"cases": service.list_cases(), "rules": service.list_rules()},
+            context={"cases": _review_cards(service)},
+        )
+
+    @app.get("/rules", response_class=HTMLResponse)
+    def rules_page(request: Request) -> Any:
+        service: ContextOpsService = request.app.state.service
+        return templates.TemplateResponse(
+            request=request,
+            name="rules.html",
+            context={"rules": service.list_rules()},
         )
 
     @app.get("/cases/{case_id}", response_class=HTMLResponse)

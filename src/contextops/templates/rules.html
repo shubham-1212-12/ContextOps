@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}ContextOps · Quality rules{% endblock %}
+{% block content %}
+<main id="main" class="page-shell rules-shell">
+  <section class="page-heading" aria-labelledby="rules-title">
+    <a class="back-link" href="/">← Back to review queue</a>
+    <p class="eyebrow">Reusable safeguards</p>
+    <h1 id="rules-title">Quality rules</h1>
+    <p class="hero-copy">Rules stay in draft until a human activates them. Active rules are evaluated against later cases.</p>
+  </section>
+
+  {% if rules %}
+  <section class="rules-grid" aria-label="Quality rules list">
+    {% for rule in rules %}
+    <article class="rule-card">
+      <div class="rule-card-top">
+        <span class="status-pill {{ rule.status }}">{{ rule.status }}</span>
+        <span class="rule-evaluation">{{ rule.evaluation_result or 'Not evaluated' }}</span>
+      </div>
+      <h2>{{ rule.title }}</h2>
+      <p>{{ rule.description }}</p>
+      <dl class="rule-details">
+        <div><dt>Failure pattern</dt><dd><code>{{ rule.failure_pattern }}</code></dd></div>
+        <div><dt>Trigger</dt><dd>{{ rule.triggering_condition }}</dd></div>
+        <div><dt>Expected behavior</dt><dd>{{ rule.expected_behavior }}</dd></div>
+        <div><dt>Test case</dt><dd><code>{{ rule.test_case }}</code></dd></div>
+      </dl>
+      <div class="rule-actions">
+        {% if rule.status == 'draft' or rule.status == 'disabled' %}
+        <button data-action="activate-rule" data-rule-id="{{ rule.id }}">
+          {% if rule.status == 'disabled' %}Re-activate explicitly{% else %}Activate explicitly{% endif %}
+        </button>
+        {% elif rule.status == 'active' %}
+        <button class="secondary" data-action="disable-rule" data-rule-id="{{ rule.id }}">Disable rule</button>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+  {% else %}
+  <section class="empty-state">
+    <p class="eyebrow">No rules yet</p>
+    <h2>Reusable safeguards will appear here</h2>
+    <p class="muted">Create a draft from a confirmed issue on a case review page.</p>
+    <a class="button" href="/">Return to review queue</a>
+  </section>
+  {% endif %}
+</main>
+{% endblock %}

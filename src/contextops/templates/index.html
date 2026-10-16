@@ -1,51 +1,65 @@
 {% extends "base.html" %}
 {% block title %}ContextOps · Review queue{% endblock %}
 {% block content %}
-<main class="stack">
-  <section class="notice">
-    <strong>Offline fictional workspace.</strong>
-    Evidence comes only from the supplied fixture. Confirmed violations, warnings, and unresolved ambiguity are kept separate.
-  </section>
-  <section>
-    <h1>Review queue</h1>
-    <div class="grid">
-      {% for case in cases %}
-      <article class="card">
-        <h2>{{ case.title }}</h2>
-        <p class="muted">Case ID: {{ case.id }}</p>
-        <a href="/cases/{{ case.id }}">Open review</a>
-      </article>
-      {% endfor %}
+<main id="main" class="page-shell dashboard-shell">
+  <section class="dashboard-hero" aria-labelledby="dashboard-title">
+    <div>
+      <p class="eyebrow">Offline review workspace</p>
+      <h1 id="dashboard-title">Review queue</h1>
+      <p class="hero-copy">Check the context before a scheduling action moves forward.</p>
+    </div>
+    <div class="hero-actions">
+      <span class="count-pill"><strong>{{ cases | length }}</strong> fictional cases</span>
+      <a class="button button-secondary" href="/rules">Manage quality rules <span aria-hidden="true">↗</span></a>
     </div>
   </section>
-  <section>
-    <h1>Reusable quality rules</h1>
-    {% if rules %}
-    <div class="grid">
-      {% for rule in rules %}
-      <article class="card">
-        <h3>{{ rule.title }}</h3>
-        <p>{{ rule.description }}</p>
-        <p><strong>Failure pattern:</strong> <code>{{ rule.failure_pattern }}</code><br>
-          <strong>Trigger:</strong> {{ rule.triggering_condition }}<br>
-          <strong>Expected behavior:</strong> {{ rule.expected_behavior }}</p>
-        <p><strong>Test case:</strong> <code>{{ rule.test_case }}</code></p>
-        <p><span class="badge {{ rule.status }}">{{ rule.status }}</span>
-          {% if rule.status == 'draft' or rule.status == 'disabled' %}
-          <button data-action="activate-rule" data-rule-id="{{ rule.id }}">
-            {% if rule.status == 'disabled' %}Re-activate explicitly{% else %}Activate explicitly{% endif %}
-          </button>
-          {% elif rule.status == 'active' %}
-          <button class="secondary" data-action="disable-rule" data-rule-id="{{ rule.id }}">Disable rule</button>
-          {% endif %}
-        </p>
-        <p class="muted">Last evaluation: {{ rule.evaluation_result or 'not evaluated' }}</p>
+
+  <section class="queue-section" aria-labelledby="queue-title">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Needs your attention</p>
+        <h2 id="queue-title">Scheduling cases</h2>
+      </div>
+      <p class="section-note">Evidence stays visible on each review page.</p>
+    </div>
+
+    {% if cases %}
+    <div class="case-list">
+      {% for case in cases %}
+      <article class="case-card">
+        <div class="case-card-content">
+          <div class="case-card-meta">
+            <span class="case-id">Case {{ "%02d" | format(loop.index) }}</span>
+            <span class="status-pill {{ case.review_status_class }}">{{ case.review_status }}</span>
+          </div>
+          <h3><a href="/cases/{{ case.id }}">{{ case.title }}</a></h3>
+          <p class="case-issue">{{ case.issue_headline }}</p>
+          <div class="case-signals" aria-label="Case signals">
+            {% if case.confirmed_count %}<span class="signal signal-danger">{{ case.confirmed_count }} confirmed</span>{% endif %}
+            {% if case.warning_count %}<span class="signal signal-warning">{{ case.warning_count }} warning</span>{% endif %}
+            {% if case.ambiguity_count %}<span class="signal signal-neutral">{{ case.ambiguity_count }} unresolved</span>{% endif %}
+          </div>
+        </div>
+        <a class="button case-action" href="/cases/{{ case.id }}">Review case <span aria-hidden="true">→</span></a>
       </article>
       {% endfor %}
     </div>
     {% else %}
-    <p class="muted">No rules yet. Create one from a confirmed issue after recording a decision.</p>
+    <div class="empty-state">
+      <p class="eyebrow">All clear</p>
+      <h3>No cases in the queue</h3>
+      <p class="muted">New fictional scheduling cases will appear here when they are ready for review.</p>
+    </div>
     {% endif %}
+  </section>
+
+  <section class="rules-callout" aria-labelledby="rules-callout-title">
+    <div>
+      <p class="eyebrow">Reusable safeguards</p>
+      <h2 id="rules-callout-title">Quality rules live separately</h2>
+      <p class="muted">Activate, disable, and inspect evaluation history without crowding the review queue.</p>
+    </div>
+    <a class="text-link" href="/rules">Open quality rules <span aria-hidden="true">→</span></a>
   </section>
 </main>
 {% endblock %}
