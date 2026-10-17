@@ -1,3 +1,5 @@
+import re
+
 from fastapi.testclient import TestClient
 
 from contextops.main import create_app
@@ -26,6 +28,20 @@ def payload() -> dict:
     }
 
 
+REQUIRED_NEW_CASE_FIELDS = (
+    "title",
+    "event",
+    "start",
+    "duration_minutes",
+    "proposal_timezone",
+    "context_timezone",
+    "calendar_status",
+    "working_hours_start",
+    "working_hours_end",
+    "blocked_time",
+)
+
+
 def test_new_case_page_and_dashboard_button_are_available(tmp_path) -> None:
     client = client_for(tmp_path)
 
@@ -37,6 +53,47 @@ def test_new_case_page_and_dashboard_button_are_available(tmp_path) -> None:
     assert dashboard.status_code == 200
     assert 'href="/cases/new"' in dashboard.text
     assert "New case" in dashboard.text
+
+
+def test_new_case_form_identifies_required_fields_and_keeps_native_constraints(
+    tmp_path,
+) -> None:
+    page = client_for(tmp_path).get("/cases/new")
+
+    assert 'id="required-fields-legend"' in page.text
+    assert "are required" in page.text
+
+    for field_id in REQUIRED_NEW_CASE_FIELDS:
+        control = re.search(
+            rf"<(?:input|select|textarea)[^>]*\bid=\"{field_id}\"[^>]*>",
+            page.text,
+        )
+        assert control is not None
+        assert re.search(r"\brequired(?:\s|=|>)", control.group(0))
+
+        label = re.search(
+            rf"<label[^>]*\bfor=\"{field_id}\"[^>]*>(.*?)</label>",
+            page.text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        assert label is not None
+        assert "*" in label.group(1)
+
+
+def test_new_case_form_exposes_an_accessible_inline_feedback_region(tmp_path) -> None:
+    page = client_for(tmp_path).get("/cases/new")
+
+    error_region = re.search(
+        r"<[^>]+\bid=\"new-case-error\"[^>]*>.*?</[^>]+>",
+        page.text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    assert error_region is not None
+    assert re.search(r'\brole="alert"', error_region.group(0))
+    assert re.search(r'\baria-live="assertive"', error_region.group(0))
+    assert re.search(r'\baria-atomic="true"', error_region.group(0))
+    assert 'aria-describedby="required-fields-legend new-case-error"' in page.text
 
 
 def test_api_creation_returns_case_for_existing_review_workflow(tmp_path) -> None:
@@ -64,7 +121,9 @@ def test_api_creation_rejects_malformed_input_without_creating_case(tmp_path) ->
     response = client.post("/api/cases", json=malformed)
 
     assert response.status_code == 400
-    assert "original_proposal.start" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert "original_proposal.start" in detail
+    assert "non-empty string" in detail
     assert "Manual roadmap review" not in client.get("/").text
 
 

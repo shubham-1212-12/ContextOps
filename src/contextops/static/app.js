@@ -104,8 +104,72 @@ if (decisionForm) {
 
 const newCaseForm = document.querySelector("[data-new-case-form]");
 if (newCaseForm) {
+  const formError = newCaseForm.querySelector("[data-form-error]");
+  let invalidField = null;
+
+  function getFieldLabel(field) {
+    const label = Array.from(newCaseForm.querySelectorAll("label")).find(
+      (candidate) => candidate.htmlFor === field.id,
+    );
+    return label
+      ? label.textContent.replace(/\s*\*\s*Required\s*$/i, "").trim()
+      : field.name || "This field";
+  }
+
+  function clearFormError() {
+    if (invalidField) {
+      invalidField.removeAttribute("aria-invalid");
+      invalidField = null;
+    }
+    if (formError) {
+      formError.hidden = true;
+      formError.textContent = "";
+    }
+    const status = document.querySelector("#app-status");
+    if (status) status.textContent = "";
+  }
+
+  function showFormError(message, field = null) {
+    if (invalidField && invalidField !== field) {
+      invalidField.removeAttribute("aria-invalid");
+    }
+    invalidField = field;
+    if (field) field.setAttribute("aria-invalid", "true");
+    if (formError) {
+      formError.textContent = message;
+      formError.hidden = false;
+    }
+    const status = document.querySelector("#app-status");
+    if (status) status.textContent = message;
+  }
+
+  newCaseForm.addEventListener("invalid", (event) => {
+    const field = event.target;
+    if (!field || !field.validity || invalidField) return;
+    const message = field.validity.valueMissing
+      ? `${getFieldLabel(field)} is required.`
+      : `${getFieldLabel(field)} has an invalid value.`;
+    showFormError(message, field);
+  }, true);
+
+  function clearErrorWhenCorrected(event) {
+    const field = event.target;
+    if (
+      formError && !formError.hidden &&
+      ((!invalidField && field.validity && field.validity.valid) ||
+        (field === invalidField && field.validity && field.validity.valid))
+    ) {
+      clearFormError();
+    }
+  }
+
+  newCaseForm.addEventListener("input", clearErrorWhenCorrected);
+  newCaseForm.addEventListener("change", clearErrorWhenCorrected);
+
   newCaseForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (!newCaseForm.checkValidity()) return;
+    clearFormError();
     const form = new FormData(newCaseForm);
     const submitButton = newCaseForm.querySelector("button[type=submit]");
     const originalLabel = submitButton.textContent.trim();
@@ -147,11 +211,13 @@ if (newCaseForm) {
           blocked_time: blockedTime,
         },
       });
+      clearFormError();
       window.location.assign(`/cases/${response.case_id}`);
     } catch (error) {
       submitButton.disabled = false;
       submitButton.textContent = originalLabel;
       showError(error);
+      showFormError(error.message);
     }
   });
 }

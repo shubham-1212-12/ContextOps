@@ -164,9 +164,15 @@ button:disabled { cursor: wait; opacity: .65; }
 .decision-form { max-width: 48rem; }
 .new-case-card { max-width: 760px; padding: 1.35rem; }
 .form-section + .form-section { border-top: 1px solid var(--border); margin-top: 1.5rem; padding-top: 1.5rem; }
+.form-legend { color: var(--muted); font-size: .8rem; margin: 0 0 1.2rem; }
+.required-mark { color: var(--danger); font-weight: 850; }
+.visually-hidden { border: 0; clip: rect(0 0 0 0); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; white-space: nowrap; width: 1px; }
+.form-error { background: #3a171b; border: 1px solid #64252c; border-radius: 8px; color: var(--danger); font-size: .84rem; margin: 0 0 1.2rem; padding: .7rem .8rem; }
+.form-error[hidden] { display: none; }
 .form-grid { display: grid; gap: .9rem 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .field-full { grid-column: 1 / -1; }
 .form-grid input { background: #080a0c; border: 1px solid var(--border-strong); border-radius: 7px; color: var(--text); padding: .7rem; width: 100%; }
+.form-grid input[aria-invalid="true"], .form-grid select[aria-invalid="true"], .form-grid textarea[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 2px #ff9b9b33; }
 .form-grid input::placeholder { color: #66717f; }
 .form-help { color: var(--subtle); font-size: .76rem; margin: .35rem 0 0; }
 .form-help code { color: #c8dcf2; }

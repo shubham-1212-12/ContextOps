@@ -11,29 +11,31 @@
   </section>
 
   <section class="dark-card new-case-card">
-    <form class="decision-form" data-new-case-form>
+    <form class="decision-form" data-new-case-form aria-describedby="required-fields-legend new-case-error">
+      <p id="required-fields-legend" class="form-legend">Fields marked <span class="required-mark" aria-hidden="true">*</span> are required.</p>
+      <div id="new-case-error" class="form-error" data-form-error role="alert" aria-live="assertive" aria-atomic="true" hidden></div>
       <div class="form-section">
         <p class="eyebrow">Proposed action</p>
         <div class="form-grid">
           <div class="field-full">
-            <label for="title">Case title</label>
+            <label for="title">Case title <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden">Required</span></label>
             <input id="title" name="title" type="text" required maxlength="160" placeholder="Quarterly planning review">
           </div>
           <div class="field-full">
-            <label for="event">Event name</label>
+            <label for="event">Event name <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden">Required</span></label>
             <input id="event" name="event" type="text" required maxlength="160" placeholder="Planning review">
           </div>
           <div class="field-full">
-            <label for="start">Start datetime with offset</label>
+            <label for="start">Start datetime with offset <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden">Required</span></label>
             <input id="start" name="start" type="text" required placeholder="2026-10-20T14:00:00+05:30">
             <p class="form-help">Use ISO-8601 with an explicit offset; for example, <code>+05:30</code> or <code>Z</code>.</p>
           </div>
           <div>
-            <label for="duration_minutes">Duration in minutes</label>
+            <label for="duration_minutes">Duration in minutes <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden">Required</span></label>
             <input id="duration_minutes" name="duration_minutes" type="number" min="1" step="1" required placeholder="60">
           </div>
           <div>
-            <label for="proposal_timezone">Proposal timezone</label>
+            <label for="proposal_timezone">Proposal timezone <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden">Required</span></label>
             <input id="proposal_timezone" name="proposal_timezone" type="text" required placeholder="Asia/Kolkata">
           </div>
         </div>
@@ -43,22 +45,22 @@
         <p class="eyebrow">Known context</p>
         <div class="form-grid">
           <div>
-            <label for="context_timezone">Context timezone</label>
+            <label for="context_timezone">Context timezone <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden">Required</span></label>
             <input id="context_timezone" name="context_timezone" type="text" required placeholder="Asia/Kolkata">
           </div>
           <div>
-            <label for="calendar_status">Calendar evidence</label>
+            <label for="calendar_status">Calendar evidence <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden">Required</span></label>
             <select id="calendar_status" name="calendar_status" required>
               <option value="not_provided">Not provided</option>
               <option value="provided">Provided in this case</option>
             </select>
           </div>
           <div>
-            <label for="working_hours_start">Working hours start</label>
+            <label for="working_hours_start">Working hours start <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden">Required</span></label>
             <input id="working_hours_start" name="working_hours_start" type="time" value="09:00" required>
           </div>
           <div>
-            <label for="working_hours_end">Working hours end</label>
+            <label for="working_hours_end">Working hours end <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden">Required</span></label>
             <input id="working_hours_end" name="working_hours_end" type="time" value="17:00" required>
           </div>
           <div class="field-full">
@@ -66,8 +68,8 @@
             <textarea id="constraints" name="constraints" rows="3" placeholder="Keep the review within working hours…"></textarea>
           </div>
           <div class="field-full">
-            <label for="blocked_time">Blocked time JSON</label>
-            <textarea id="blocked_time" name="blocked_time" rows="4">[]</textarea>
+            <label for="blocked_time">Blocked time JSON <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden">Required</span></label>
+            <textarea id="blocked_time" name="blocked_time" rows="4" required>[]</textarea>
             <p class="form-help">Use <code>[]</code> when no blocked interval is known. Each item needs <code>start</code> and <code>end</code> ISO-8601 datetimes with offsets.</p>
           </div>
         </div>
