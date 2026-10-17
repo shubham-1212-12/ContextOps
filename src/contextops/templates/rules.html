@@ -6,16 +6,34 @@
     <a class="back-link" href="/">← Back to review queue</a>
     <p class="eyebrow">Reusable safeguards</p>
     <h1 id="rules-title">Quality rules</h1>
-    <p class="hero-copy">Rules stay in draft until a human activates them. Active rules are evaluated against later cases.</p>
+    <p class="hero-copy">Rules stay in draft until a human activates them. The source case shows where a rule originated; active rules can be evaluated against later cases.</p>
   </section>
+
+  {% if duplicate_rule %}
+  <aside class="duplicate-notice" role="status" aria-live="polite">
+    <div>
+      <strong>Equivalent rule already exists.</strong>
+      <p>No new rule was created. Rule #{{ duplicate_rule.id }} is <strong>{{ duplicate_rule.status }}</strong> and remains unchanged.</p>
+    </div>
+    <a class="button button-secondary" href="#rule-{{ duplicate_rule.id }}">View existing rule</a>
+  </aside>
+  {% endif %}
 
   {% if rules %}
   <section class="rules-grid" aria-label="Quality rules list">
     {% for rule in rules %}
-    <article class="rule-card">
+    <article class="rule-card" id="rule-{{ rule.id }}">
       <div class="rule-card-top">
         <span class="status-pill {{ rule.status }}">{{ rule.status }}</span>
         <span class="rule-evaluation">{{ rule.evaluation_result or 'Not evaluated' }}</span>
+      </div>
+      <div class="rule-identity">
+        <span>Rule #{{ rule.id }}</span>
+        {% if rule.source_case_id %}
+        <span class="rule-origin">Originated from <a href="/cases/{{ rule.source_case_id }}">{{ rule.source_case_title }}</a></span>
+        {% else %}
+        <span class="rule-origin">Source case unavailable</span>
+        {% endif %}
       </div>
       <h2>{{ rule.title }}</h2>
       <p>{{ rule.description }}</p>

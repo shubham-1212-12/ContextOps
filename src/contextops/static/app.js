@@ -41,7 +41,13 @@ document.addEventListener("click", (event) => {
     request = postJson(`/api/cases/${button.dataset.caseId}/evaluate-rules`);
   }
   if (request) {
-    request.then(() => window.location.reload()).catch((error) => {
+    request.then((data) => {
+      if (action === "draft-rule" && data.duplicate) {
+        window.location.assign(`/rules?duplicate_rule_id=${encodeURIComponent(data.id)}#rule-${data.id}`);
+        return;
+      }
+      window.location.reload();
+    }).catch((error) => {
       button.disabled = false;
       button.textContent = originalLabel;
       showError(error);

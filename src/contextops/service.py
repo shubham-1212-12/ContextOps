@@ -271,50 +271,118 @@ class ContextOpsService:
                 ),
                 test_case=f"scheduling action {issue['code']}",
             )
-            cursor = connection.execute(
+            existing = connection.execute(
                 """
-                INSERT INTO quality_rules
-                    (source_issue_id, title, description, failure_pattern,
-                     triggering_condition, expected_behavior, test_case,
-                     evaluation_result, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                SELECT *
+                FROM quality_rules
+                WHERE failure_pattern = ?
+                  AND triggering_condition = ?
+                  AND expected_behavior = ?
+                ORDER BY CASE status
+                    WHEN 'active' THEN 0
+                    WHEN 'draft' THEN 1
+                    WHEN 'disabled' THEN 2
+                    ELSE 3
+                END, id
+                LIMIT 1
                 """,
                 (
-                    issue_id,
-                    rule.title,
-                    rule.description,
                     rule.failure_pattern,
                     rule.triggering_condition,
                     rule.expected_behavior,
-                    rule.test_case,
-                    None,
-                    rule.status.value,
                 ),
+            ).fetchone()
+            if existing is not None:
+                existing_rule_id = int(existing["id"])
+            else:
+                existing_rule_id = None
+
+            if existing_rule_id is None:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO quality_rules
+                        (source_issue_id, title, description, failure_pattern,
+                         triggering_condition, expected_behavior, test_case,
+                         evaluation_result, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        issue_id,
+                        rule.title,
+                        rule.description,
+                        rule.failure_pattern,
+                        rule.triggering_condition,
+                        rule.expected_behavior,
+                        rule.test_case,
+                        None,
+                        rule.status.value,
+                    ),
+                )
+                rule_id = cursor.lastrowid
+                connection.execute(
+                    """
+                    INSERT INTO audit_events (case_id, event_type, payload_json, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        case_id,
+                        "quality_rule_drafted",
+                        Database.serialize({"rule_id": rule_id, "status": rule.status.value}),
+                        _now(),
+                    ),
+                )
+            else:
+                rule_id = existing_rule_id
+        result = self.get_rule(int(rule_id))
+        assert result is not None
+        if existing_rule_id is not None:
+            result.update(
+                {
+                    "duplicate": True,
+                    "created": False,
+                    "duplicate_status": result["status"],
+                    "duplicate_message": (
+                        "An equivalent quality rule already exists; "
+                        "returning the existing rule without creating a duplicate."
+                    ),
+                }
             )
-            rule_id = cursor.lastrowid
-            connection.execute(
-                """
-                INSERT INTO audit_events (case_id, event_type, payload_json, created_at)
-                VALUES (?, ?, ?, ?)
-                """,
-                (
-                    case_id,
-                    "quality_rule_drafted",
-                    Database.serialize({"rule_id": rule_id, "status": rule.status.value}),
-                    _now(),
-                ),
-            )
-        return self.get_rule(int(rule_id))
+        else:
+            result.update({"created": True, "duplicate": False})
+        return result
 
     def list_rules(self) -> list[dict[str, Any]]:
         with self.database.session() as connection:
-            rows = connection.execute("SELECT * FROM quality_rules ORDER BY id").fetchall()
+            rows = connection.execute(
+                """
+                SELECT quality_rules.*,
+                       detected_issues.case_id AS source_case_id,
+                       scheduling_cases.title AS source_case_title
+                FROM quality_rules
+                LEFT JOIN detected_issues
+                    ON detected_issues.id = quality_rules.source_issue_id
+                LEFT JOIN scheduling_cases
+                    ON scheduling_cases.id = detected_issues.case_id
+                ORDER BY quality_rules.id
+                """
+            ).fetchall()
             return [dict(row) for row in rows]
 
     def get_rule(self, rule_id: int) -> dict[str, Any] | None:
         with self.database.session() as connection:
             row = connection.execute(
-                "SELECT * FROM quality_rules WHERE id = ?", (rule_id,)
+                """
+                SELECT quality_rules.*,
+                       detected_issues.case_id AS source_case_id,
+                       scheduling_cases.title AS source_case_title
+                FROM quality_rules
+                LEFT JOIN detected_issues
+                    ON detected_issues.id = quality_rules.source_issue_id
+                LEFT JOIN scheduling_cases
+                    ON scheduling_cases.id = detected_issues.case_id
+                WHERE quality_rules.id = ?
+                """,
+                (rule_id,),
             ).fetchone()
             return dict(row) if row else None
 
