@@ -118,6 +118,9 @@ button:disabled { cursor: wait; opacity: .65; }
 .duplicate-notice { align-items: center; background: #332611; border: 1px solid #6b4f1b; border-radius: 11px; color: #f5d995; display: flex; gap: 1rem; justify-content: space-between; margin: -1rem 0 1.5rem; padding: .85rem 1rem; }
 .duplicate-notice strong { color: #ffe7a5; }
 .duplicate-notice p { color: #d9bd7d; font-size: .86rem; margin: .25rem 0 0; }
+.inline-duplicate-notice { margin: .85rem 0 0; }
+.inline-duplicate-notice > div { min-width: 0; }
+.inline-duplicate-notice .button { flex: 0 0 auto; }
 
 .case-heading { align-items: end; display: flex; gap: 2rem; justify-content: space-between; margin-bottom: 2rem; }
 .case-heading h1 { font-size: clamp(2rem, 4vw, 3.35rem); margin-bottom: .65rem; max-width: 45rem; }

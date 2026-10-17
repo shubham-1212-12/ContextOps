@@ -83,17 +83,13 @@ def create_app(database_path: str | None = None) -> FastAPI:
     @app.get("/rules", response_class=HTMLResponse)
     def rules_page(request: Request) -> Any:
         service: ContextOpsService = request.app.state.service
-        duplicate_rule = None
-        duplicate_rule_id = request.query_params.get("duplicate_rule_id")
-        if duplicate_rule_id:
-            try:
-                duplicate_rule = service.get_rule(int(duplicate_rule_id))
-            except ValueError:
-                duplicate_rule = None
+        return_case_id = request.query_params.get("return_case_id")
+        if return_case_id and service.get_case(return_case_id) is None:
+            return_case_id = None
         return templates.TemplateResponse(
             request=request,
             name="rules.html",
-            context={"rules": service.list_rules(), "duplicate_rule": duplicate_rule},
+            context={"rules": service.list_rules(), "return_case_id": return_case_id},
         )
 
     @app.get("/cases/new", response_class=HTMLResponse)

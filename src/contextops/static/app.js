@@ -43,7 +43,27 @@ document.addEventListener("click", (event) => {
   if (request) {
     request.then((data) => {
       if (action === "draft-rule" && data.duplicate) {
-        window.location.assign(`/rules?duplicate_rule_id=${encodeURIComponent(data.id)}#rule-${data.id}`);
+        button.disabled = false;
+        button.textContent = originalLabel;
+        const notice = button.parentElement.querySelector("[data-duplicate-notice]");
+        if (notice) {
+          const message = document.createElement("div");
+          const title = document.createElement("strong");
+          title.textContent = "Equivalent rule already exists.";
+          const detail = document.createElement("p");
+          detail.append("No new rule was created. Rule #", String(data.id), " is ");
+          const status = document.createElement("strong");
+          status.textContent = data.duplicate_status;
+          detail.append(status, " and remains unchanged.");
+          const link = document.createElement("a");
+          link.className = "button button-secondary";
+          link.href = `/rules?duplicate_rule_id=${encodeURIComponent(data.id)}&return_case_id=${encodeURIComponent(button.dataset.caseId)}#rule-${data.id}`;
+          link.textContent = "View existing rule";
+          message.append(title, detail);
+          notice.replaceChildren(message, link);
+          notice.hidden = false;
+        }
+        showStatus("Equivalent rule found; no new rule was created.");
         return;
       }
       window.location.reload();

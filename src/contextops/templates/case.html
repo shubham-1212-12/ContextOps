@@ -57,6 +57,7 @@
         <p>{{ issue.evidence }}</p>
         {% if issue.category == 'confirmed_violation' %}
         <button class="secondary" data-action="draft-rule" data-case-id="{{ case.id }}" data-issue-id="{{ issue.id }}">Create draft quality rule</button>
+        <div class="duplicate-notice inline-duplicate-notice" data-duplicate-notice hidden role="status" aria-live="polite"></div>
         {% endif %}
       </article>
       {% endfor %}

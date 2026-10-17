@@ -188,7 +188,7 @@ def test_different_definition_creates_distinct_rule_and_seeded_cases_stay_intact
     assert service.get_case("case-similar-outside-hours") == other_case_before
 
 
-def test_duplicate_rule_api_response_and_rules_page_explain_status_and_source_link(tmp_path) -> None:
+def test_duplicate_rule_api_response_and_case_notice_link_to_rules_page(tmp_path) -> None:
     from fastapi.testclient import TestClient
 
     from contextops.main import create_app
@@ -221,11 +221,31 @@ def test_duplicate_rule_api_response_and_rules_page_explain_status_and_source_li
     assert duplicate.json()["duplicate_status"] == "disabled"
     assert duplicate.json()["source_case_id"] == source_case_id
 
-    page = client.get(f"/rules?duplicate_rule_id={created['id']}#rule-{created['id']}")
+    case_page = client.get(f"/cases/{other_case_id}")
+    assert case_page.status_code == 200
+    assert 'data-duplicate-notice' in case_page.text
+
+    page = client.get(
+        f"/rules?duplicate_rule_id={created['id']}&return_case_id={other_case_id}#rule-{created['id']}"
+    )
     assert page.status_code == 200
-    assert "Equivalent rule already exists." in page.text
-    assert "is <strong>disabled</strong>" in page.text
-    assert f'href="#rule-{created["id"]}"' in page.text
+    assert "Equivalent rule already exists." not in page.text
     assert f'id="rule-{created["id"]}"' in page.text
     assert f'href="/cases/{source_case_id}"' in page.text
     assert "Quarterly design review proposed after hours" in page.text
+    assert f'href="/cases/{other_case_id}"' in page.text
+    assert "Back to case review" in page.text
+
+
+def test_rules_page_keeps_queue_return_when_not_opened_from_case(tmp_path) -> None:
+    from fastapi.testclient import TestClient
+
+    from contextops.main import create_app
+
+    client = TestClient(create_app(str(tmp_path / "rules.db")))
+
+    page = client.get("/rules")
+
+    assert page.status_code == 200
+    assert 'class="back-link" href="/"' in page.text
+    assert "Back to review queue" in page.text
