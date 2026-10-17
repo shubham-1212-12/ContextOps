@@ -9,8 +9,8 @@ The application uses Python 3.12, FastAPI, SQLite, server-rendered HTML, and min
 Run these commands from a terminal. Replace the Git URL with the URL for your copy of the repository.
 
 ```sh
-git clone https://github.com/your_org/contextops.git
-cd contextops
+git clone https://github.com/shubham-1212-12/ContextOps.git
+cd ContextOps
 python3.12 -m venv .venv
 . .venv/bin/activate
 python -m pip install --requirement requirements.lock
@@ -34,8 +34,8 @@ Use these commands from the repository root. They do not require `make`.
 Clone and enter the repository first if you have not done so:
 
 ```powershell
-git clone https://github.com/your_org/contextops.git
-Set-Location contextops
+git clone https://github.com/shubham-1212-12/ContextOps.git
+Set-Location ContextOps
 ```
 
 Create the project environment and install the locked dependencies:
