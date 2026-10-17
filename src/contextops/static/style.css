@@ -179,6 +179,12 @@ pre { background: #080a0c; border: 1px solid var(--border); border-radius: 8px; 
 .stack > * + * { margin-top: 1rem; }
 .event { border-left: 3px solid #405a76; color: #c5ced8; padding-left: .75rem; }
 .event + .event { margin-top: .8rem; }
+.evaluation-event { display: grid; gap: .25rem; }
+.evaluation-rule-link { color: var(--accent); font-weight: 750; text-decoration: none; }
+.evaluation-rule-link:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.evaluation-origin { color: var(--muted); font-size: .8rem; }
+.evaluation-origin a { color: var(--accent); text-decoration: none; }
+.evaluation-origin a:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
 
 @media (max-width: 800px) {
   .finding-grid { grid-template-columns: 1fr; }

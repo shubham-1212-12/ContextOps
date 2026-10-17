@@ -87,9 +87,15 @@ class ContextOpsService:
             evaluations = connection.execute(
                 """
                 SELECT current_evaluations.*, quality_rules.title AS rule_title,
-                       quality_rules.status AS rule_status
+                       quality_rules.status AS rule_status,
+                       detected_issues.case_id AS source_case_id,
+                       scheduling_cases.title AS source_case_title
                 FROM rule_evaluations AS current_evaluations
                 JOIN quality_rules ON quality_rules.id = current_evaluations.rule_id
+                LEFT JOIN detected_issues
+                    ON detected_issues.id = quality_rules.source_issue_id
+                LEFT JOIN scheduling_cases
+                    ON scheduling_cases.id = detected_issues.case_id
                 WHERE current_evaluations.case_id = ?
                   AND quality_rules.status = 'active'
                   AND current_evaluations.id = (

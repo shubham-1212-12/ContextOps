@@ -240,6 +240,82 @@ def test_queue_navigation_and_both_case_pages_keep_details_secondary(tmp_path) -
         assert client.get("/").status_code == 200
 
 
+def test_multiple_active_equivalent_rules_show_ids_sources_and_return_link(
+    tmp_path,
+) -> None:
+    client = client_for(tmp_path)
+    first_case_id = "case-outside-hours"
+    second_case_id = "case-similar-outside-hours"
+    first_case = client.get(f"/api/cases/{first_case_id}").json()
+    second_case = client.get(f"/api/cases/{second_case_id}").json()
+    first_issue_id = next(
+        issue["id"]
+        for issue in first_case["issues"]
+        if issue["code"] == "outside_working_hours"
+    )
+    second_issue_id = next(
+        issue["id"]
+        for issue in second_case["issues"]
+        if issue["code"] == "outside_working_hours"
+    )
+
+    first_rule = client.post(
+        f"/api/cases/{first_case_id}/rules", json={"issue_id": first_issue_id}
+    ).json()
+    client.post(f"/api/rules/{first_rule['id']}/activate")
+    second_rule = client.app.state.service.database  # type: ignore[attr-defined]
+    with second_rule.session() as connection:
+        connection.execute(
+            """
+            INSERT INTO quality_rules
+                (source_issue_id, title, description, failure_pattern,
+                 triggering_condition, expected_behavior, test_case,
+                 evaluation_result, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                second_issue_id,
+                first_rule["title"],
+                first_rule["description"],
+                first_rule["failure_pattern"],
+                first_rule["triggering_condition"],
+                first_rule["expected_behavior"],
+                first_rule["test_case"],
+                None,
+                "active",
+            ),
+        )
+        second_rule_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    evaluation_response = client.post(
+        f"/api/cases/{first_case_id}/evaluate-rules"
+    )
+    assert evaluation_response.status_code == 200
+    assert {
+        result["rule_id"] for result in evaluation_response.json()["evaluations"]
+    } == {first_rule["id"], second_rule_id}
+
+    rendered = client.get(f"/cases/{first_case_id}")
+    assert rendered.status_code == 200
+    assert f"Rule #{first_rule['id']}" in rendered.text
+    assert f"Rule #{second_rule_id}" in rendered.text
+    assert f"/rules?return_case_id={first_case_id}#rule-{first_rule['id']}" in rendered.text
+    assert f"/rules?return_case_id={first_case_id}#rule-{second_rule_id}" in rendered.text
+    assert f"/cases/{first_case_id}" in rendered.text
+    assert f"/cases/{second_case_id}" in rendered.text
+
+    rules_page = client.get(f"/rules?return_case_id={first_case_id}")
+    assert rules_page.status_code == 200
+    assert "Back to case review" in rules_page.text
+    assert f'href="/cases/{first_case_id}"' in rules_page.text
+
+    client.post(f"/api/rules/{second_rule_id}/disable")
+    fresh_evaluations = client.post(
+        f"/api/cases/{first_case_id}/evaluate-rules"
+    ).json()["evaluations"]
+    assert [result["rule_id"] for result in fresh_evaluations] == [first_rule["id"]]
+
+
 def test_legacy_accept_decision_remains_supported(tmp_path) -> None:
     client = client_for(tmp_path)
 

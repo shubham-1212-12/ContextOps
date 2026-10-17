@@ -105,7 +105,17 @@
       <button class="secondary" data-action="evaluate-rules" data-case-id="{{ case.id }}">Evaluate active rules</button>
       {% if case.evaluations %}
       {% for evaluation in case.evaluations %}
-      <div class="event"><strong>{{ evaluation.rule_title }}</strong>: {{ evaluation.result }} <span class="muted">({{ evaluation.rule_status }})</span></div>
+      <div class="event evaluation-event">
+        <div>
+          <a class="evaluation-rule-link" href="/rules?return_case_id={{ case.id }}#rule-{{ evaluation.rule_id }}">Rule #{{ evaluation.rule_id }} · {{ evaluation.rule_title }}</a>
+        </div>
+        <div><strong>{{ evaluation.result }}</strong> <span class="muted">({{ evaluation.rule_status }})</span></div>
+        {% if evaluation.source_case_id %}
+        <div class="evaluation-origin">Originated from <a href="/cases/{{ evaluation.source_case_id }}">{{ evaluation.source_case_title }}</a></div>
+        {% else %}
+        <div class="evaluation-origin">Source case unavailable</div>
+        {% endif %}
+      </div>
       {% endfor %}
       {% else %}
       <p class="muted">No current active-rule results for this case.</p>
