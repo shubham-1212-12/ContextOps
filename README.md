@@ -1,55 +1,92 @@
 # ContextOps
 
-ContextOps is a small, offline-first Human × AI review application for fictional scheduling actions. It makes contextual evidence visible before a person accepts or rejects a proposed action, preserves the decision and rationale, and turns repeated errors into reusable quality rules.
+ContextOps is an offline-first Human × AI review application for fictional scheduling actions. It shows contextual evidence before a person accepts or rejects a proposal, preserves the decision and rationale, and turns repeated errors into reusable quality rules.
 
-The first implementation uses Python 3.12, FastAPI, SQLite, server-rendered HTML, and minimal JavaScript. The default analyzer is deterministic and does not call an external AI service.
+The application uses Python 3.12, FastAPI, SQLite, server-rendered HTML, and minimal JavaScript. Its analyzer is deterministic and does not call an external AI service.
 
-## Prerequisites
+## Start locally on Linux or macOS
 
-- Python 3.12.8 (the required version is recorded in `.python-version`)
-- `make`
-- Docker 27 or newer for container builds
-
-No global Python packages are required. Install dependencies into a project-local virtual environment.
-
-## Local setup
+Run these commands from a terminal. Replace the Git URL with the URL for your copy of the repository.
 
 ```sh
+git clone https://github.com/your_org/contextops.git
+cd contextops
 python3.12 -m venv .venv
 . .venv/bin/activate
 python -m pip install --requirement requirements.lock
-cp .env.example .env
-```
-
-On Windows PowerShell, activate the environment with `.venv\Scripts\Activate.ps1` and copy the example file with `Copy-Item .env.example .env`.
-
-## Run
-
-```sh
 make run
 ```
 
-Open <http://127.0.0.1:8000>. The health check is available at <http://127.0.0.1:8000/health>.
-
-## Test
-
-The one supported test command is:
+Open <http://127.0.0.1:8000> in a browser. Check the running application with:
 
 ```sh
+curl --fail http://127.0.0.1:8000/health
+```
+
+The health endpoint returns `{"status":"ok","service":"contextops"}`. Stop the server with `Ctrl+C`.
+
+The local workflow requires Python 3.12.8, recorded in `.python-version`, and `make`. Docker is optional for local development.
+
+## Run and test on Windows PowerShell
+
+Use these commands from the repository root. They do not require `make`.
+
+Clone and enter the repository first if you have not done so:
+
+```powershell
+git clone https://github.com/your_org/contextops.git
+Set-Location contextops
+```
+
+Create the project environment and install the locked dependencies:
+
+```powershell
+py -3.12 -m venv .venv
+& ".\.venv\Scripts\python.exe" -m pip install --requirement requirements.lock
+```
+
+Start ContextOps:
+
+```powershell
+$env:PYTHONPATH = Join-Path (Get-Location) "src"
+& ".\.venv\Scripts\python.exe" -m uvicorn contextops.main:app --host 127.0.0.1 --port 8000
+```
+
+Open <http://127.0.0.1:8000>. In a second PowerShell window, run the health check:
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:8000/health | Select-Object -ExpandProperty Content
+```
+
+Run the test suite with the same source path:
+
+```powershell
+$env:PYTHONPATH = Join-Path (Get-Location) "src"
+& ".\.venv\Scripts\python.exe" -m pytest -q
+```
+
+The tests use deterministic fixtures and isolated SQLite databases. They do not make network requests.
+
+## Run and test with Make on Unix-like systems
+
+From the repository root, run the supported commands on Linux or macOS:
+
+```sh
+make run
 make test
 ```
 
-Tests use deterministic fixtures and an isolated SQLite database. They do not make network requests.
+`make run` starts Uvicorn on `127.0.0.1:8000`. `make test` runs the same offline test suite shown in the Windows instructions.
 
-## Docker
+## Build and run with Docker
 
-Build the image:
+Build the image from the repository root:
 
 ```sh
 docker build --tag contextops:local .
 ```
 
-Run the application:
+Run the application without persistent storage:
 
 ```sh
 docker run --rm --publish 8000:8000 contextops:local
@@ -61,16 +98,24 @@ Run the test suite in the same image:
 docker run --rm --entrypoint python contextops:local -m pytest
 ```
 
-The container runs as an unprivileged user. Its SQLite data directory is writable inside the container; mount a local directory at `/app/data` only when persistence across container runs is needed.
+The container runs as the unprivileged user `appuser` with UID `10001`. The no-volume command loses new cases, decisions, rules, and audit events when you remove the container.
 
-## Deploy the container
+## Deploy with persistent storage
 
-For a deployment host with Docker installed, build and start the exact image with:
+Use a Docker volume so SQLite data survives container restarts and replacement:
 
 ```sh
+docker volume create contextops-data
 docker build --tag contextops:local .
-docker run --detach --name contextops --publish 8000:8000 --restart unless-stopped contextops:local
+docker run --detach \
+  --name contextops \
+  --publish 8000:8000 \
+  --volume contextops-data:/app/data \
+  --restart unless-stopped \
+  contextops:local
 ```
+
+The application uses `/app/data/contextops.db` inside the image. The named volume persists that file. A host bind mount also works, but the host directory must be writable by UID `10001`.
 
 Check the deployed process locally on the host:
 
@@ -78,7 +123,16 @@ Check the deployed process locally on the host:
 curl --fail http://127.0.0.1:8000/health
 ```
 
-Stop it with `docker stop contextops`. This MVP has no external service or production authentication layer; expose it only in a trusted environment until those concerns are intentionally added.
+Stop it with:
+
+```sh
+docker stop contextops
+```
+
+> **Security warning**
+> ContextOps has no authentication, authorization, TLS, user identity, rate limiting, or tenant isolation. Every client that can reach the service can read cases and call mutation endpoints. Do not expose the container directly to the public internet. Put it behind an HTTPS reverse proxy or an authenticated private network, and restrict access to trusted clients.
+
+SQLite supports this single-instance prototype. The repository does not include database migrations, backups, replication, or a production database configuration. A new empty database also receives the fictional seeded cases automatically.
 
 ## Demonstration workflow
 
@@ -96,7 +150,7 @@ The review queue is the home page. Use <http://127.0.0.1:8000/rules> to manage r
 
 The regression test in `tests/test_review_flow.py` executes this same path, including the pre-activation non-evaluation check and the post-activation match.
 
-## Using ContextOps in a Real Scheduling Workflow (Manual Prototype)
+## Use the manual review workflow
 
 ContextOps currently supports a manual, offline prototype workflow for reviewing user-submitted scheduling proposals:
 
@@ -109,12 +163,122 @@ ContextOps currently supports a manual, offline prototype workflow for reviewing
 
 This manual prototype works without an AI API, live calendar, authentication, or external service. Quality rules can be created from confirmed issues and explicitly activated for later cases.
 
-Future integrations may add AI-agent proposal generation, live calendar availability, authentication, multi-user collaboration, and scheduling execution. Those integrations are not part of the current workflow.
+## Integrate through the API
 
-## Configuration
+An external application can submit a proposal, receive a generated case ID, and retrieve the stored findings. The API accepts JSON and does not require an AI service.
 
-Copy `.env.example` to `.env` for local configuration. `.env` is ignored by Git. The MVP accepts only fictional scheduling data and does not require an API key or external service.
+Submit a scheduling proposal with `POST /api/cases`:
 
-## Project status
+```sh
+curl --fail \
+  --request POST \
+  --url http://127.0.0.1:8000/api/cases \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "title": "Planning review",
+    "original_proposal": {
+      "event": "Planning review",
+      "start": "2026-10-20T14:00:00+05:30",
+      "duration_minutes": 60,
+      "timezone": "Asia/Kolkata"
+    },
+    "context": {
+      "timezone": "Asia/Kolkata",
+      "working_hours": {"start": "09:00", "end": "17:00"},
+      "calendar_data": {"status": "not_provided"},
+      "constraints": ["Keep the review within working hours."],
+      "blocked_time": []
+    }
+  }'
+```
 
-The repository is being delivered in small working milestones. The completed workflow will load a fictional case, show confirmed violations separately from warnings and unresolved ambiguity, record a human rejection with rationale and audit history, create a draft quality rule, activate it explicitly, and evaluate it against a similar regression case.
+The successful response has HTTP `201` and contains these fields:
+
+- `case_id`: the generated case ID, such as `case-0123456789abcdef0123456789abcdef`
+- `case`: the stored case object with `id`, `title`, `original_proposal`, `context`, `issues`, `decisions`, `audit`, and `evaluations`
+
+The live response contains the submitted proposal and context, detected issue objects, an initial `case_created` audit event, and empty decision and evaluation arrays.
+
+Retrieve the stored case with the returned ID:
+
+```sh
+curl --fail \
+  http://127.0.0.1:8000/api/cases/case-0123456789abcdef0123456789abcdef
+```
+
+Case creation returns HTTP `400` with a `detail` string when the JSON body or scheduling data is invalid. Validation runs before persistence, so an invalid request does not create a partial case.
+
+The other current API routes are:
+
+| Method and path | Purpose |
+| --- | --- |
+| `GET /health` | Check process liveness |
+| `GET /api/cases/{case_id}` | Retrieve one case |
+| `GET /api/rules` | List quality rules |
+| `POST /api/cases/{case_id}/decision` | Record a human decision |
+| `POST /api/cases/{case_id}/rules` | Draft a rule from an issue |
+| `POST /api/rules/{rule_id}/activate` | Activate a rule |
+| `POST /api/rules/{rule_id}/disable` | Disable a rule |
+| `POST /api/cases/{case_id}/evaluate-rules` | Evaluate active rules |
+
+FastAPI also exposes interactive documentation at <http://127.0.0.1:8000/docs>. The current handlers accept raw JSON requests, so the generated OpenAPI document does not describe typed request bodies for the mutation routes.
+
+The API does not currently provide case listing, webhooks, authentication, live calendar access, or scheduling execution. An external agent must retain case IDs or add a separate integration layer for those needs.
+
+## Configure the application
+
+The application does not load `.env` files automatically. Copying `.env.example` to `.env` is not enough to change startup behavior. Export variables in the shell, pass them through your deployment system, or use the command-line flags shown above.
+
+`DATABASE_PATH` is the active application setting. It selects the SQLite file and defaults to `data/contextops.db`:
+
+```sh
+export DATABASE_PATH=data/contextops.db
+make run
+```
+
+In PowerShell, set the same variable before starting Uvicorn:
+
+```powershell
+$env:DATABASE_PATH = "data/contextops.db"
+```
+
+`HOST` and `PORT` affect the `make run` shell command only. Direct Uvicorn commands use their `--host` and `--port` arguments. The Docker image currently binds to `0.0.0.0:8000`.
+
+The following `.env.example` entries are present but are not currently implemented as application behavior:
+
+- `APP_ENV`
+- `LOG_LEVEL`
+- `AI_PROVIDER`
+
+The MVP accepts fictional scheduling data, uses the deterministic analyzer, and does not require an API key or external service.
+
+## Implemented and tested features
+
+The current test suite covers these features:
+
+- Seeded fictional scheduling cases and a server-rendered review queue
+- Manual case creation with ISO-8601 and context validation
+- Confirmed violations, warnings, and unresolved ambiguity findings
+- Human approve, edit, reject, defer, and escalate decisions with rationales
+- Preservation of the original proposal when a reviewer edits it
+- Audit events for case creation, decisions, rule changes, and evaluations
+- Draft, activate, disable, and evaluate quality rules
+- Duplicate-rule detection and explicit rule lifecycle changes
+- HTTP `400` responses for invalid case and decision requests
+- The New Case form's required-field indicators and inline validation feedback
+
+Run `make test`, or use the Windows PowerShell command above, to verify the current behavior.
+
+## Future integration work
+
+The repository does not currently implement these capabilities:
+
+- AI-agent proposal generation
+- Live calendar or attendee availability checks
+- Authentication, authorization, user identity, or multi-user collaboration
+- Team or tenant isolation
+- Case listing, filtering, webhooks, or event subscriptions
+- Calendar event creation, notifications, or scheduling execution
+- Database migrations, backups, replication, or a production database adapter
+
+Treat these items as follow-up work, not as available ContextOps features.
