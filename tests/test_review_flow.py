@@ -208,6 +208,10 @@ def test_dashboard_prioritizes_review_queue_and_separates_quality_rules(tmp_path
     assert "1 confirmed" in dashboard.text
     assert "1 warning" in dashboard.text
     assert "1 unresolved" in dashboard.text
+    assert "How to read findings" in dashboard.text
+    assert "A detected violation supported by the supplied evidence." in dashboard.text
+    assert "A caution, such as the lack of live calendar data." in dashboard.text
+    assert "Important context still needs confirmation, such as attendee availability." in dashboard.text
     assert 'href="/rules"' in dashboard.text
     assert "Failure pattern" not in dashboard.text
 

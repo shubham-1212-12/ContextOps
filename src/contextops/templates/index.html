@@ -20,7 +20,17 @@
         <p class="eyebrow">Needs your attention</p>
         <h2 id="queue-title">Scheduling cases</h2>
       </div>
-      <p class="section-note">Evidence stays visible on each review page.</p>
+      <div class="queue-tools">
+        <p class="section-note">Evidence stays visible on each review page.</p>
+        <details class="findings-guide">
+          <summary><span class="info-icon" aria-hidden="true">i</span> How to read findings</summary>
+          <div class="findings-guide-content">
+            <div><span class="signal signal-danger">Confirmed</span><p>A detected violation supported by the supplied evidence.</p></div>
+            <div><span class="signal signal-warning">Warning</span><p>A caution, such as the lack of live calendar data.</p></div>
+            <div><span class="signal signal-neutral">Unresolved</span><p>Important context still needs confirmation, such as attendee availability.</p></div>
+          </div>
+        </details>
+      </div>
     </div>
 
     {% if cases %}
