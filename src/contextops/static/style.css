@@ -43,6 +43,9 @@ button { cursor: pointer; }
 .site-nav { display: flex; gap: .25rem; }
 .site-nav a { border-radius: 7px; color: var(--muted); font-size: .86rem; padding: .45rem .65rem; text-decoration: none; transition: background-color .18s ease, color .18s ease; }
 .site-nav a:hover { background: var(--surface-soft); color: var(--text); }
+.logout-form { display: inline-flex; margin: 0; }
+.nav-button { background: transparent; border-color: var(--border); color: var(--muted); font-size: .8rem; padding: .45rem .65rem; }
+.nav-button:hover { background: var(--surface-soft); border-color: var(--border-strong); color: var(--text); }
 
 .page-shell { margin: 0 auto; max-width: 1120px; padding: 3.5rem 1.25rem 5rem; }
 .dashboard-shell { padding-top: 4rem; }
@@ -106,6 +109,12 @@ button:disabled { cursor: wait; opacity: .65; }
 
 .page-heading { margin-bottom: 2.5rem; max-width: 48rem; }
 .back-link { display: inline-block; margin-bottom: 2.5rem; }
+.login-shell { display: grid; min-height: 70vh; place-items: center; }
+.login-card { max-width: 30rem; padding: 1.5rem; width: min(100%, 30rem); }
+.login-card h1 { font-size: clamp(2rem, 5vw, 3rem); }
+.login-card .hero-copy { font-size: .95rem; margin-bottom: 1.5rem; }
+.login-form input { background: #080a0c; border: 1px solid var(--border-strong); border-radius: 7px; color: var(--text); padding: .7rem; width: 100%; }
+.login-form button { margin-top: 1.1rem; width: 100%; }
 .rules-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
 .rule-card, .dark-card { background: var(--surface); border: 1px solid var(--border); border-radius: 13px; }
 .rule-card { display: flex; flex-direction: column; padding: 1.25rem; }

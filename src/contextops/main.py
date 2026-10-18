@@ -5,19 +5,111 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, quote
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from contextops import __version__
+from contextops.auth import (
+    LOGIN_CSRF_COOKIE_NAME,
+    SESSION_COOKIE_NAME,
+    Authentication,
+    load_auth_config,
+    safe_local_redirect,
+)
 from contextops.database import Database
 from contextops.service import ContextOpsService
 
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+
+def _form_value(form: dict[str, list[str]], name: str) -> str:
+    values = form.get(name, [])
+    return values[0] if values else ""
+
+
+async def _read_urlencoded_form(request: Request) -> dict[str, list[str]]:
+    try:
+        body = await request.body()
+        return parse_qs(body.decode("utf-8"), keep_blank_values=True)
+    except (UnicodeDecodeError, ValueError):
+        return {}
+
+
+def _set_session_cookie(response: Response, authentication: Authentication, token: str) -> None:
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        max_age=authentication.config.session_ttl_seconds,
+        httponly=True,
+        samesite="lax",
+        path="/",
+        secure=authentication.config.cookie_secure,
+    )
+
+
+def _set_login_csrf_cookie(
+    response: Response, authentication: Authentication, token: str
+) -> None:
+    response.set_cookie(
+        key=LOGIN_CSRF_COOKIE_NAME,
+        value=token,
+        max_age=authentication.config.session_ttl_seconds,
+        httponly=True,
+        samesite="lax",
+        path="/",
+        secure=authentication.config.cookie_secure,
+    )
+
+
+def _clear_auth_cookies(response: Response, authentication: Authentication) -> None:
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        path="/",
+        secure=authentication.config.cookie_secure,
+        httponly=True,
+        samesite="lax",
+    )
+    response.delete_cookie(
+        key=LOGIN_CSRF_COOKIE_NAME,
+        path="/",
+        secure=authentication.config.cookie_secure,
+        httponly=True,
+        samesite="lax",
+    )
+
+
+def _login_page(
+    request: Request,
+    *,
+    csrf_token: str,
+    next_destination: str,
+    error: str | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    request.state.login_csrf_token = csrf_token
+    response = templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={"next_destination": next_destination, "error": error},
+        status_code=status_code,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _unauthenticated_response(request: Request) -> Response:
+    path = request.url.path
+    if path == "/api" or path.startswith("/api/") or path == "/openapi.json":
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+    next_destination = safe_local_redirect(path + (f"?{request.url.query}" if request.url.query else ""))
+    return RedirectResponse(url=f"/login?next={quote(next_destination, safe='')}", status_code=303)
 
 
 def _review_cards(service: ContextOpsService) -> list[dict[str, Any]]:
@@ -62,14 +154,129 @@ def _review_cards(service: ContextOpsService) -> list[dict[str, Any]]:
 
 
 def create_app(database_path: str | None = None) -> FastAPI:
+    authentication = Authentication(load_auth_config())
     app = FastAPI(title="ContextOps", version=__version__)
     path = database_path or os.getenv("DATABASE_PATH", "data/contextops.db")
     app.state.service = ContextOpsService(Database(path))
+    app.state.authentication = authentication
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+    @app.middleware("http")
+    async def authentication_guard(request: Request, call_next: Any) -> Response:
+        path = request.url.path
+        request.state.authenticated = False
+
+        if path == "/health" or path == "/login" or path.startswith("/static/"):
+            return await call_next(request)
+
+        session_token = request.cookies.get(SESSION_COOKIE_NAME)
+        session = authentication.get_session(session_token)
+        if session is None:
+            return _unauthenticated_response(request)
+
+        request.state.authenticated = True
+        request.state.session_token = session.token
+        request.state.csrf_token = session.csrf_token
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and path != "/logout":
+            if not authentication.validate_csrf(
+                session, request.headers.get("x-csrf-token")
+            ):
+                return JSONResponse(
+                    {"detail": "Invalid or missing CSRF token"}, status_code=403
+                )
+        response = await call_next(request)
+        response.headers.setdefault("Cache-Control", "no-store")
+        return response
 
     @app.get("/health", tags=["system"])
     def health() -> dict[str, str]:
         return {"status": "ok", "service": "contextops"}
+
+    @app.get("/login", response_class=HTMLResponse)
+    def login_page(request: Request) -> HTMLResponse:
+        next_destination = safe_local_redirect(request.query_params.get("next"))
+        token = authentication.issue_login_csrf(next_destination)
+        response = _login_page(
+            request,
+            csrf_token=token,
+            next_destination=next_destination,
+        )
+        _set_login_csrf_cookie(response, authentication, token)
+        return response
+
+    @app.post("/login", response_class=HTMLResponse)
+    async def login(request: Request) -> Response:
+        form = await _read_urlencoded_form(request)
+        csrf_token = _form_value(form, "csrf_token")
+        cookie_token = request.cookies.get(LOGIN_CSRF_COOKIE_NAME)
+        if not authentication.validate_login_csrf(csrf_token, cookie_token):
+            return HTMLResponse("Invalid or missing CSRF token", status_code=403)
+
+        requested_next = _form_value(form, "next")
+        if not requested_next:
+            requested_next = authentication.login_csrf_destination(cookie_token)
+        next_destination = safe_local_redirect(requested_next)
+        client_ip = request.client.host if request.client else "unknown"
+        retry_after = authentication.login_allowed(client_ip)
+        if retry_after:
+            response = _login_page(
+                request,
+                csrf_token=csrf_token,
+                next_destination=next_destination,
+                error="Too many failed sign-in attempts. Try again shortly.",
+                status_code=429,
+            )
+            response.headers["Retry-After"] = str(max(1, int(retry_after + 0.999)))
+            return response
+
+        username = _form_value(form, "username")
+        password = _form_value(form, "password")
+        if not authentication.authenticate(username, password):
+            authentication.record_failed_login(client_ip)
+            return _login_page(
+                request,
+                csrf_token=csrf_token,
+                next_destination=next_destination,
+                error="Invalid username or password.",
+                status_code=401,
+            )
+
+        authentication.clear_failed_logins(client_ip)
+        authentication.consume_login_csrf(cookie_token)
+        session = authentication.create_session(request.cookies.get(SESSION_COOKIE_NAME))
+        response = RedirectResponse(url=next_destination, status_code=303)
+        _set_session_cookie(response, authentication, session.token)
+        response.delete_cookie(
+            key=LOGIN_CSRF_COOKIE_NAME,
+            path="/",
+            secure=authentication.config.cookie_secure,
+            httponly=True,
+            samesite="lax",
+        )
+        return response
+
+    @app.post("/logout")
+    async def logout(request: Request) -> Response:
+        session_token = request.cookies.get(SESSION_COOKIE_NAME)
+        session = authentication.get_session(session_token)
+        if session is None:
+            response = RedirectResponse(url="/login", status_code=303)
+            _clear_auth_cookies(response, authentication)
+            return response
+
+        form = await _read_urlencoded_form(request)
+        supplied_token = request.headers.get("x-csrf-token") or _form_value(
+            form, "csrf_token"
+        )
+        if not authentication.validate_csrf(session, supplied_token):
+            return JSONResponse(
+                {"detail": "Invalid or missing CSRF token"}, status_code=403
+            )
+
+        authentication.logout(session.token)
+        response = RedirectResponse(url="/login", status_code=303)
+        _clear_auth_cookies(response, authentication)
+        return response
 
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request) -> Any:

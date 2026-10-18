@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#050607">
+    <meta name="csrf-token" content="{{ request.state.csrf_token | default('') }}">
     <title>{% block title %}ContextOps{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
   </head>
@@ -21,6 +22,12 @@
         <nav class="site-nav" aria-label="Primary navigation">
           <a href="/">Review queue</a>
           <a href="/rules">Quality rules</a>
+          {% if request.state.authenticated %}
+          <form class="logout-form" action="/logout" method="post">
+            <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+            <button class="nav-button" type="submit">Log out</button>
+          </form>
+          {% endif %}
         </nav>
       </div>
     </header>

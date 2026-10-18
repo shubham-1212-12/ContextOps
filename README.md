@@ -27,6 +27,14 @@ The health endpoint returns `{"status":"ok","service":"contextops"}`. Stop the s
 
 The local workflow requires Python 3.12.8, recorded in `.python-version`, and `make`. Docker is optional for local development.
 
+Before starting the application, configure the required administrator credentials in your shell. Replace both placeholder values with private values. Use `CONTEXTOPS_COOKIE_SECURE=false` for local HTTP development only:
+
+```sh
+export CONTEXTOPS_ADMIN_USERNAME=replace_with_admin_username
+export CONTEXTOPS_ADMIN_PASSWORD='replace_with_a_long_random_password'
+export CONTEXTOPS_COOKIE_SECURE=false
+```
+
 ## Run and test on Windows PowerShell
 
 Use these commands from the repository root. They do not require `make`.
@@ -43,6 +51,14 @@ Create the project environment and install the locked dependencies:
 ```powershell
 py -3.12 -m venv .venv
 & ".\.venv\Scripts\python.exe" -m pip install --requirement requirements.lock
+```
+
+Set the required administrator credentials before starting the application. Replace both placeholder values with private values:
+
+```powershell
+$env:CONTEXTOPS_ADMIN_USERNAME = "replace_with_admin_username"
+$env:CONTEXTOPS_ADMIN_PASSWORD = "replace_with_a_long_random_password"
+$env:CONTEXTOPS_COOKIE_SECURE = "false"
 ```
 
 Start ContextOps:
@@ -86,10 +102,17 @@ Build the image from the repository root:
 docker build --tag contextops:local .
 ```
 
+For a local Docker run, create an ignored `.env` file from `.env.example`, replace the administrator credential placeholders, and pass it to Docker. Docker loads this file into the container; the application does not load it itself:
+
+```sh
+cp .env.example .env
+# Edit .env and replace the administrator credential placeholders.
+```
+
 Run the application without persistent storage:
 
 ```sh
-docker run --rm --publish 8000:8000 contextops:local
+docker run --rm --env-file .env --publish 8000:8000 contextops:local
 ```
 
 Run the test suite in the same image:
@@ -109,6 +132,7 @@ docker volume create contextops-data
 docker build --tag contextops:local .
 docker run --detach \
   --name contextops \
+  --env-file .env \
   --publish 8000:8000 \
   --volume contextops-data:/app/data \
   --restart unless-stopped \
@@ -130,7 +154,7 @@ docker stop contextops
 ```
 
 > **Security warning**
-> ContextOps has no authentication, authorization, TLS, user identity, rate limiting, or tenant isolation. Every client that can reach the service can read cases and call mutation endpoints. Do not expose the container directly to the public internet. Put it behind an HTTPS reverse proxy or an authenticated private network, and restrict access to trusted clients.
+> ContextOps now requires one administrator login, but it still has no multi-user identity, roles, tenant isolation, or built-in TLS. Use HTTPS in any shared deployment. Keep the service behind an HTTPS reverse proxy or an authenticated private network, and restrict access to trusted clients.
 
 SQLite supports this single-instance prototype. The repository does not include database migrations, backups, replication, or a production database configuration. A new empty database also receives the fictional seeded cases automatically.
 
@@ -161,11 +185,13 @@ ContextOps currently supports a manual, offline prototype workflow for reviewing
 5. Record an approve, edit, reject, defer, or escalate decision with a rationale. Edited proposals are stored separately; the original proposal remains unchanged.
 6. Inspect the collapsed audit history for case creation, decisions, quality-rule changes, and rule evaluations.
 
-This manual prototype works without an AI API, live calendar, authentication, or external service. Quality rules can be created from confirmed issues and explicitly activated for later cases.
+This manual prototype works without an AI API, live calendar, or external service after the administrator signs in. Quality rules can be created from confirmed issues and explicitly activated for later cases.
 
 ## Integrate through the API
 
-An external application can submit a proposal, receive a generated case ID, and retrieve the stored findings. The API accepts JSON and does not require an AI service.
+An authenticated external application can submit a proposal, receive a generated case ID, and retrieve the stored findings. The API accepts JSON and does not require an AI service. First establish the administrator session through `/login`; send the session cookie on API requests and the session CSRF token in `X-CSRF-Token` for every state-changing request.
+
+The `curl` examples below assume that `cookies.txt` contains the session cookie from a successful form login and that `session_csrf_token_here` is the CSRF token from an authenticated HTML page. Keep the administrator password and cookie jar out of source control.
 
 Submit a scheduling proposal with `POST /api/cases`:
 
@@ -173,6 +199,8 @@ Submit a scheduling proposal with `POST /api/cases`:
 curl --fail \
   --request POST \
   --url http://127.0.0.1:8000/api/cases \
+  --cookie cookies.txt \
+  --header 'X-CSRF-Token: session_csrf_token_here' \
   --header 'Content-Type: application/json' \
   --data '{
     "title": "Planning review",
@@ -203,6 +231,7 @@ Retrieve the stored case with the returned ID:
 
 ```sh
 curl --fail \
+  --cookie cookies.txt \
   http://127.0.0.1:8000/api/cases/case-0123456789abcdef0123456789abcdef
 ```
 
@@ -213,6 +242,9 @@ The other current API routes are:
 | Method and path | Purpose |
 | --- | --- |
 | `GET /health` | Check process liveness |
+| `GET /login` | Render the administrator login form |
+| `POST /login` | Create an authenticated session |
+| `POST /logout` | End the authenticated session |
 | `GET /api/cases/{case_id}` | Retrieve one case |
 | `GET /api/rules` | List quality rules |
 | `POST /api/cases/{case_id}/decision` | Record a human decision |
@@ -223,11 +255,11 @@ The other current API routes are:
 
 FastAPI also exposes interactive documentation at <http://127.0.0.1:8000/docs>. The current handlers accept raw JSON requests, so the generated OpenAPI document does not describe typed request bodies for the mutation routes.
 
-The API does not currently provide case listing, webhooks, authentication, live calendar access, or scheduling execution. An external agent must retain case IDs or add a separate integration layer for those needs.
+The API requires the administrator session cookie and a matching CSRF token for state-changing requests. It does not currently provide case listing, webhooks, live calendar access, or scheduling execution. An external agent must retain case IDs and implement the login/session flow, or use a separate integration layer for those needs.
 
 ## Configure the application
 
-The application does not load `.env` files automatically. Copying `.env.example` to `.env` is not enough to change startup behavior. Export variables in the shell, pass them through your deployment system, or use the command-line flags shown above.
+The application does not load `.env` files automatically. Copying `.env.example` to `.env` is not enough to change startup behavior. Export variables in the shell, pass them through your deployment system, or use Docker's `--env-file` option. Never commit real credentials.
 
 `DATABASE_PATH` is the active application setting. It selects the SQLite file and defaults to `data/contextops.db`:
 
@@ -242,6 +274,15 @@ In PowerShell, set the same variable before starting Uvicorn:
 $env:DATABASE_PATH = "data/contextops.db"
 ```
 
+Authentication requires these environment variables:
+
+- `CONTEXTOPS_ADMIN_USERNAME`: the single administrator username
+- `CONTEXTOPS_ADMIN_PASSWORD`: the single administrator password
+- `CONTEXTOPS_COOKIE_SECURE`: set to `true` when serving through HTTPS; use `false` only for local HTTP
+- `CONTEXTOPS_SESSION_TTL_SECONDS`: positive session lifetime in seconds; defaults to `28800`
+
+The application fails during startup when either administrator credential is missing. It stores opaque sessions in process memory, so restart or replacement logs out all sessions. Run one application instance while using in-memory sessions and SQLite.
+
 `HOST` and `PORT` affect the `make run` shell command only. Direct Uvicorn commands use their `--host` and `--port` arguments. The Docker image currently binds to `0.0.0.0:8000`.
 
 The following `.env.example` entries are present but are not currently implemented as application behavior:
@@ -251,6 +292,22 @@ The following `.env.example` entries are present but are not currently implement
 - `AI_PROVIDER`
 
 The MVP accepts fictional scheduling data, uses the deterministic analyzer, and does not require an API key or external service.
+
+## Configure a Netrun deployment
+
+This repository does not include Netrun-specific configuration, so verify Netrun's environment-variable and persistent-storage behavior in its deployment settings before exposing the service. Configure these exact names through Netrun's secret and runtime environment facilities:
+
+```text
+CONTEXTOPS_ADMIN_USERNAME=your_private_admin_username
+CONTEXTOPS_ADMIN_PASSWORD=your_private_admin_password
+CONTEXTOPS_COOKIE_SECURE=true
+CONTEXTOPS_SESSION_TTL_SECONDS=28800
+DATABASE_PATH=/app/data/contextops.db
+```
+
+Store the password as a Netrun secret. Do not put it in GitHub, the Dockerfile, a committed `.env` file, or a public deployment command. Set `CONTEXTOPS_COOKIE_SECURE=true` only when Netrun serves the application through HTTPS. Confirm that Netrun passes the variables to the container and mounts persistent storage at `/app/data`; the repository cannot verify those platform behaviors.
+
+The Docker image starts Uvicorn on `0.0.0.0:8000` and creates `/app/data` for SQLite. Configure Netrun to route its public HTTPS endpoint to container port `8000`. After deployment, verify `/health`, the login page, and a protected page. Do not treat a successful health check as proof that secrets or persistence are configured correctly.
 
 ## Implemented and tested features
 
@@ -266,6 +323,7 @@ The current test suite covers these features:
 - Duplicate-rule detection and explicit rule lifecycle changes
 - HTTP `400` responses for invalid case and decision requests
 - The New Case form's required-field indicators and inline validation feedback
+- Single-administrator login, logout, session cookies, protected routes, CSRF checks, and failed-login throttling
 
 Run `make test`, or use the Windows PowerShell command above, to verify the current behavior.
 
@@ -275,7 +333,7 @@ The repository does not currently implement these capabilities:
 
 - AI-agent proposal generation
 - Live calendar or attendee availability checks
-- Authentication, authorization, user identity, or multi-user collaboration
+- Multi-user authentication, authorization roles, user identity, or collaboration
 - Team or tenant isolation
 - Case listing, filtering, webhooks, or event subscriptions
 - Calendar event creation, notifications, or scheduling execution

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextops.database import Database
 from contextops.service import ContextOpsService
+from tests.helpers import authenticated_client
 
 
 def make_service(tmp_path) -> ContextOpsService:
@@ -193,7 +194,7 @@ def test_duplicate_rule_api_response_and_case_notice_link_to_rules_page(tmp_path
 
     from contextops.main import create_app
 
-    client = TestClient(create_app(str(tmp_path / "api.db")))
+    client = authenticated_client(create_app(str(tmp_path / "api.db")))
     source_case_id = "case-outside-hours"
     other_case_id = "case-similar-outside-hours"
     source_issue_id = next(
@@ -242,7 +243,7 @@ def test_rules_page_keeps_queue_return_when_not_opened_from_case(tmp_path) -> No
 
     from contextops.main import create_app
 
-    client = TestClient(create_app(str(tmp_path / "rules.db")))
+    client = authenticated_client(create_app(str(tmp_path / "rules.db")))
 
     page = client.get("/rules")
 

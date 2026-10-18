@@ -1,10 +1,11 @@
 from fastapi.testclient import TestClient
 
 from contextops.main import create_app
+from tests.helpers import authenticated_client
 
 
 def client_for(tmp_path) -> TestClient:
-    return TestClient(create_app(str(tmp_path / "contextops.db")))
+    return authenticated_client(create_app(str(tmp_path / "contextops.db")))
 
 
 def test_end_to_end_rejection_rule_activation_and_regression(tmp_path) -> None:
