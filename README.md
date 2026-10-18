@@ -27,11 +27,11 @@ The health endpoint returns `{"status":"ok","service":"contextops"}`. Stop the s
 
 The local workflow requires Python 3.12.8, recorded in `.python-version`, and `make`. Docker is optional for local development.
 
-Before starting the application, configure the required administrator credentials in your shell. Replace both placeholder values with private values. Use `CONTEXTOPS_COOKIE_SECURE=false` for local HTTP development only:
+Before starting the application, configure the required administrator credentials in your shell. `.env.example` intentionally leaves both credential values empty and cannot start the application unchanged. Use private values and set `CONTEXTOPS_COOKIE_SECURE=false` explicitly for local HTTP development only:
 
 ```sh
-export CONTEXTOPS_ADMIN_USERNAME=replace_with_admin_username
-export CONTEXTOPS_ADMIN_PASSWORD='replace_with_a_long_random_password'
+export CONTEXTOPS_ADMIN_USERNAME=your_local_admin_username
+export CONTEXTOPS_ADMIN_PASSWORD='your_local_long_random_password'
 export CONTEXTOPS_COOKIE_SECURE=false
 ```
 
@@ -53,11 +53,11 @@ py -3.12 -m venv .venv
 & ".\.venv\Scripts\python.exe" -m pip install --requirement requirements.lock
 ```
 
-Set the required administrator credentials before starting the application. Replace both placeholder values with private values:
+Set the required administrator credentials before starting the application. `.env.example` intentionally leaves both credential values empty and cannot start the application unchanged:
 
 ```powershell
-$env:CONTEXTOPS_ADMIN_USERNAME = "replace_with_admin_username"
-$env:CONTEXTOPS_ADMIN_PASSWORD = "replace_with_a_long_random_password"
+$env:CONTEXTOPS_ADMIN_USERNAME = "your_local_admin_username"
+$env:CONTEXTOPS_ADMIN_PASSWORD = "your_local_long_random_password"
 $env:CONTEXTOPS_COOKIE_SECURE = "false"
 ```
 
@@ -259,7 +259,7 @@ The API requires the administrator session cookie and a matching CSRF token for 
 
 ## Configure the application
 
-The application does not load `.env` files automatically. Copying `.env.example` to `.env` is not enough to change startup behavior. Export variables in the shell, pass them through your deployment system, or use Docker's `--env-file` option. Never commit real credentials.
+The application does not load `.env` files automatically. Copying `.env.example` to `.env` unchanged cannot start the application because the required credential values are empty. Set real administrator credentials through deployment secrets, export them in the shell, or pass them through Docker's `--env-file` option. Never commit real credentials.
 
 `DATABASE_PATH` is the active application setting. It selects the SQLite file and defaults to `data/contextops.db`:
 
@@ -278,7 +278,7 @@ Authentication requires these environment variables:
 
 - `CONTEXTOPS_ADMIN_USERNAME`: the single administrator username
 - `CONTEXTOPS_ADMIN_PASSWORD`: the single administrator password
-- `CONTEXTOPS_COOKIE_SECURE`: set to `true` when serving through HTTPS; use `false` only for local HTTP
+- `CONTEXTOPS_COOKIE_SECURE`: set to `true` for every HTTPS deployment; use `false` only for explicitly local HTTP development
 - `CONTEXTOPS_SESSION_TTL_SECONDS`: positive session lifetime in seconds; defaults to `28800`
 
 The application fails during startup when either administrator credential is missing. It stores opaque sessions in process memory, so restart or replacement logs out all sessions. Run one application instance while using in-memory sessions and SQLite.
@@ -291,7 +291,7 @@ The following `.env.example` entries are present but are not currently implement
 - `LOG_LEVEL`
 - `AI_PROVIDER`
 
-The MVP accepts fictional scheduling data, uses the deterministic analyzer, and does not require an API key or external service.
+For HTTPS deployments, `CONTEXTOPS_COOKIE_SECURE=true` is mandatory. Configure real administrator credentials through the deployment secret store; do not use the unchanged `.env.example` values. The MVP accepts fictional scheduling data, uses the deterministic analyzer, and does not require an API key or external service.
 
 ## Configure a Netrun deployment
 
@@ -305,7 +305,7 @@ CONTEXTOPS_SESSION_TTL_SECONDS=28800
 DATABASE_PATH=/app/data/contextops.db
 ```
 
-Store the password as a Netrun secret. Do not put it in GitHub, the Dockerfile, a committed `.env` file, or a public deployment command. Set `CONTEXTOPS_COOKIE_SECURE=true` only when Netrun serves the application through HTTPS. Confirm that Netrun passes the variables to the container and mounts persistent storage at `/app/data`; the repository cannot verify those platform behaviors.
+Store both administrator credentials as Netrun secrets. Do not put them in GitHub, the Dockerfile, a committed `.env` file, or a public deployment command. `CONTEXTOPS_COOKIE_SECURE=true` is mandatory when Netrun serves the application through HTTPS; use `false` only for local HTTP development. Confirm that Netrun passes the variables to the container and mounts persistent storage at `/app/data`; the repository cannot verify those platform behaviors.
 
 The Docker image starts Uvicorn on `0.0.0.0:8000` and creates `/app/data` for SQLite. Configure Netrun to route its public HTTPS endpoint to container port `8000`. After deployment, verify `/health`, the login page, and a protected page. Do not treat a successful health check as proof that secrets or persistence are configured correctly.
 

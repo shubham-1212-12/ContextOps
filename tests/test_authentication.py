@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from html import unescape
 import os
+from pathlib import Path
 import re
 from urllib.parse import parse_qs, urlparse
 
@@ -213,6 +214,25 @@ def test_missing_admin_credentials_fail_app_creation(tmp_path, monkeypatch) -> N
 
     with pytest.raises(RuntimeError, match="administrator credentials are not configured"):
         create_app(str(tmp_path / "missing-credentials.db"))
+
+
+def test_unchanged_env_example_cannot_start_with_admin_credentials(
+    tmp_path, monkeypatch
+) -> None:
+    example_values = {}
+    example_path = Path(__file__).parents[1] / ".env.example"
+    for line in example_path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("CONTEXTOPS_ADMIN_"):
+            name, value = line.split("=", 1)
+            example_values[name] = value
+            monkeypatch.setenv(name, value)
+
+    assert example_values == {
+        "CONTEXTOPS_ADMIN_USERNAME": "",
+        "CONTEXTOPS_ADMIN_PASSWORD": "",
+    }
+    with pytest.raises(RuntimeError, match="administrator credentials are not configured"):
+        create_app(str(tmp_path / "unchanged-example.db"))
 
 
 def test_login_rejects_missing_and_invalid_csrf_tokens_with_403(tmp_path) -> None:
