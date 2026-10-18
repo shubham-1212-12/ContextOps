@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import parse_qs, quote
 
 from fastapi import FastAPI, HTTPException, Request
@@ -18,6 +19,8 @@ from contextops.auth import (
     LOGIN_CSRF_COOKIE_NAME,
     SESSION_COOKIE_NAME,
     Authentication,
+    LoginCsrfDiagnostics,
+    classify_login_csrf_reason,
     load_auth_config,
     safe_local_redirect,
 )
@@ -27,11 +30,61 @@ from contextops.service import ContextOpsService
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+logger = logging.getLogger(__name__)
 
 
 def _form_value(form: dict[str, list[str]], name: str) -> str:
     values = form.get(name, [])
     return values[0] if values else ""
+
+
+def _log_login_csrf_failure(
+    diagnostics: LoginCsrfDiagnostics,
+    *,
+    stage: Literal["initial_validation", "atomic_consumption"],
+    atomic_consumption_result: bool | None,
+) -> None:
+    """Log only booleans and reason codes for a rejected login CSRF check."""
+
+    consumption_code = (
+        "not_attempted"
+        if atomic_consumption_result is None
+        else str(atomic_consumption_result).lower()
+    )
+    reason = classify_login_csrf_reason(
+        form_token_present=diagnostics.form_token_present,
+        cookie_present=diagnostics.cookie_present,
+        tokens_equal=diagnostics.tokens_equal,
+        challenge_present=diagnostics.challenge_present,
+        challenge_active=diagnostics.challenge_active,
+        challenge_expired=diagnostics.challenge_expired,
+        atomic_consumption_result=atomic_consumption_result,
+    )
+    logger.warning(
+        "login_csrf_rejected stage=%s reason=%s form_token_present=%s cookie_present=%s "
+        "tokens_equal=%s challenge_present=%s challenge_active=%s "
+        "challenge_expired=%s atomic_consumption_result=%s",
+        stage,
+        reason,
+        diagnostics.form_token_present,
+        diagnostics.cookie_present,
+        diagnostics.tokens_equal,
+        diagnostics.challenge_present,
+        diagnostics.challenge_active,
+        diagnostics.challenge_expired,
+        consumption_code,
+        extra={
+            "login_csrf_stage": stage,
+            "login_csrf_reason": reason,
+            "form_token_present": diagnostics.form_token_present,
+            "cookie_present": diagnostics.cookie_present,
+            "tokens_equal": diagnostics.tokens_equal,
+            "challenge_present": diagnostics.challenge_present,
+            "challenge_active": diagnostics.challenge_active,
+            "challenge_expired": diagnostics.challenge_expired,
+            "atomic_consumption_result": consumption_code,
+        },
+    )
 
 
 async def _read_urlencoded_form(request: Request) -> dict[str, list[str]]:
@@ -212,6 +265,12 @@ def create_app(database_path: str | None = None) -> FastAPI:
         csrf_token = _form_value(form, "csrf_token")
         cookie_token = request.cookies.get(LOGIN_CSRF_COOKIE_NAME)
         if not authentication.validate_login_csrf(csrf_token, cookie_token):
+            if authentication.config.csrf_diagnostics_enabled:
+                _log_login_csrf_failure(
+                    authentication.login_csrf_diagnostics(csrf_token, cookie_token),
+                    stage="initial_validation",
+                    atomic_consumption_result=None,
+                )
             return HTMLResponse("Invalid or missing CSRF token", status_code=403)
 
         requested_next = _form_value(form, "next")
@@ -256,7 +315,14 @@ def create_app(database_path: str | None = None) -> FastAPI:
             )
 
         authentication.clear_failed_logins(client_ip)
-        if not authentication.consume_login_csrf(cookie_token):
+        consumed = authentication.consume_login_csrf(cookie_token)
+        if not consumed:
+            if authentication.config.csrf_diagnostics_enabled:
+                _log_login_csrf_failure(
+                    authentication.login_csrf_diagnostics(csrf_token, cookie_token),
+                    stage="atomic_consumption",
+                    atomic_consumption_result=consumed,
+                )
             return HTMLResponse("Invalid or missing CSRF token", status_code=403)
         session = authentication.create_session(request.cookies.get(SESSION_COOKIE_NAME))
         response = RedirectResponse(url=next_destination, status_code=303)

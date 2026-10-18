@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from html import unescape
+import logging
 import os
 from pathlib import Path
 import re
@@ -9,6 +10,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from fastapi.testclient import TestClient
 
+from contextops.auth import classify_login_csrf_reason
 from contextops.main import create_app
 from tests.helpers import (
     authenticated_client,
@@ -254,6 +256,189 @@ def test_login_rejects_missing_and_invalid_csrf_tokens_with_403(tmp_path) -> Non
 
     assert missing.status_code == 403
     assert invalid.status_code == 403
+
+
+@pytest.mark.parametrize(
+    ("diagnostic", "expected_reason"),
+    [
+        (
+            {
+                "form_token_present": False,
+                "cookie_present": True,
+                "tokens_equal": False,
+                "challenge_present": True,
+                "challenge_active": True,
+                "challenge_expired": False,
+            },
+            "missing_form_token",
+        ),
+        (
+            {
+                "form_token_present": True,
+                "cookie_present": False,
+                "tokens_equal": False,
+                "challenge_present": False,
+                "challenge_active": False,
+                "challenge_expired": False,
+            },
+            "missing_cookie",
+        ),
+        (
+            {
+                "form_token_present": True,
+                "cookie_present": True,
+                "tokens_equal": False,
+                "challenge_present": True,
+                "challenge_active": True,
+                "challenge_expired": False,
+            },
+            "token_mismatch",
+        ),
+        (
+            {
+                "form_token_present": True,
+                "cookie_present": True,
+                "tokens_equal": True,
+                "challenge_present": False,
+                "challenge_active": False,
+                "challenge_expired": False,
+            },
+            "challenge_missing",
+        ),
+        (
+            {
+                "form_token_present": True,
+                "cookie_present": True,
+                "tokens_equal": True,
+                "challenge_present": True,
+                "challenge_active": False,
+                "challenge_expired": True,
+            },
+            "challenge_expired",
+        ),
+        (
+            {
+                "form_token_present": True,
+                "cookie_present": True,
+                "tokens_equal": True,
+                "challenge_present": True,
+                "challenge_active": True,
+                "challenge_expired": False,
+                "atomic_consumption_result": False,
+            },
+            "atomic_consumption_failed",
+        ),
+    ],
+)
+def test_login_csrf_diagnostic_reason_classification(diagnostic, expected_reason) -> None:
+    assert classify_login_csrf_reason(**diagnostic) == expected_reason
+
+
+def test_login_csrf_diagnostics_are_safe_and_rejections_remain_403(
+    tmp_path, monkeypatch, caplog
+) -> None:
+    monkeypatch.setenv("CONTEXTOPS_CSRF_DIAGNOSTICS", "true")
+    client = raw_client(tmp_path)
+    page = client.get("/login")
+    token = csrf_token(page)
+    password = credentials()["password"]
+    session_id = "session-id-must-not-be-logged"
+    client.cookies.set("contextops_session", session_id)
+
+    caplog.set_level(logging.WARNING, logger="contextops.main")
+    missing = client.post(
+        "/login",
+        data={**credentials()},
+        follow_redirects=False,
+    )
+
+    assert missing.status_code == 403
+    missing_record = caplog.records[-1]
+    assert missing_record.login_csrf_stage == "initial_validation"
+    assert missing_record.login_csrf_reason == "missing_form_token"
+    assert missing_record.form_token_present is False
+    assert missing_record.cookie_present is True
+    assert missing_record.tokens_equal is False
+    assert missing_record.challenge_present is True
+    assert missing_record.challenge_active is True
+    assert missing_record.challenge_expired is False
+    assert missing_record.atomic_consumption_result == "not_attempted"
+
+    caplog.clear()
+    invalid = client.post(
+        "/login",
+        data={**credentials(), "csrf_token": f"{token}-invalid"},
+        follow_redirects=False,
+    )
+
+    assert invalid.status_code == 403
+    invalid_record = caplog.records[-1]
+    assert invalid_record.login_csrf_stage == "initial_validation"
+    assert invalid_record.login_csrf_reason == "token_mismatch"
+    assert invalid_record.form_token_present is True
+    assert invalid_record.cookie_present is True
+    assert invalid_record.tokens_equal is False
+    assert invalid_record.challenge_present is True
+    assert invalid_record.challenge_active is True
+    assert invalid_record.challenge_expired is False
+    assert invalid_record.atomic_consumption_result == "not_attempted"
+    assert token not in caplog.text
+    assert credentials()["username"] not in caplog.text
+    assert password not in caplog.text
+    assert session_id not in caplog.text
+
+
+def test_login_csrf_diagnostics_are_disabled_by_default(tmp_path, monkeypatch, caplog) -> None:
+    monkeypatch.delenv("CONTEXTOPS_CSRF_DIAGNOSTICS", raising=False)
+    client = raw_client(tmp_path)
+
+    caplog.set_level(logging.WARNING, logger="contextops.main")
+    response = client.post(
+        "/login",
+        data={**credentials()},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    assert not [record for record in caplog.records if record.name == "contextops.main"]
+
+
+def test_enabled_login_csrf_diagnostics_do_not_change_successful_login(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("CONTEXTOPS_CSRF_DIAGNOSTICS", "true")
+    client = raw_client(tmp_path)
+
+    _, response = submit_login(client)
+
+    assert response.status_code in {302, 303, 307}
+
+
+def test_login_csrf_atomic_consumption_failure_is_rejected_and_logged(
+    tmp_path, monkeypatch, caplog
+) -> None:
+    monkeypatch.setenv("CONTEXTOPS_CSRF_DIAGNOSTICS", "true")
+    client = raw_client(tmp_path)
+    authentication = client.app.state.authentication
+    monkeypatch.setattr(authentication, "consume_login_csrf", lambda _cookie: False)
+    page = client.get("/login")
+    token = csrf_token(page)
+
+    caplog.set_level(logging.WARNING, logger="contextops.main")
+    response = client.post(
+        "/login",
+        data={**credentials(), "csrf_token": token},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    record = caplog.records[-1]
+    assert record.login_csrf_stage == "atomic_consumption"
+    assert record.login_csrf_reason == "atomic_consumption_failed"
+    assert record.atomic_consumption_result == "false"
+    assert record.form_token_present is True
+    assert record.cookie_present is True
+    assert record.tokens_equal is True
 
 
 def test_login_csrf_consumption_is_single_use_across_instances(tmp_path) -> None:

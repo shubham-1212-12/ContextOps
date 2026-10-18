@@ -28,6 +28,7 @@ class AuthConfig:
     password: str
     session_ttl_seconds: int
     cookie_secure: bool
+    csrf_diagnostics_enabled: bool
 
 
 @dataclass
@@ -35,6 +36,58 @@ class Session:
     token: str
     csrf_token: str
     expires_at: float
+
+
+@dataclass(frozen=True)
+class LoginCsrfDiagnostics:
+    """Non-sensitive state captured while diagnosing a rejected login CSRF check."""
+
+    form_token_present: bool
+    cookie_present: bool
+    tokens_equal: bool
+    challenge_present: bool
+    challenge_active: bool
+    challenge_expired: bool
+
+    @property
+    def reason(self) -> str:
+        return classify_login_csrf_reason(
+            form_token_present=self.form_token_present,
+            cookie_present=self.cookie_present,
+            tokens_equal=self.tokens_equal,
+            challenge_present=self.challenge_present,
+            challenge_active=self.challenge_active,
+            challenge_expired=self.challenge_expired,
+        )
+
+
+def classify_login_csrf_reason(
+    *,
+    form_token_present: bool,
+    cookie_present: bool,
+    tokens_equal: bool,
+    challenge_present: bool,
+    challenge_active: bool,
+    challenge_expired: bool,
+    atomic_consumption_result: bool | None = None,
+) -> str:
+    """Classify a login CSRF outcome using booleans only."""
+
+    if atomic_consumption_result is False:
+        return "atomic_consumption_failed"
+    if not form_token_present:
+        return "missing_form_token"
+    if not cookie_present:
+        return "missing_cookie"
+    if not tokens_equal:
+        return "token_mismatch"
+    if not challenge_present:
+        return "challenge_missing"
+    if challenge_expired:
+        return "challenge_expired"
+    if not challenge_active:
+        return "challenge_inactive"
+    return "valid"
 
 
 def _required_environment_value(name: str, missing: list[str]) -> str:
@@ -89,6 +142,7 @@ def load_auth_config() -> AuthConfig:
             "CONTEXTOPS_SESSION_TTL_SECONDS", DEFAULT_SESSION_TTL_SECONDS
         ),
         cookie_secure=_read_boolean("CONTEXTOPS_COOKIE_SECURE", False),
+        csrf_diagnostics_enabled=_read_boolean("CONTEXTOPS_CSRF_DIAGNOSTICS", False),
     )
 
 
@@ -174,6 +228,40 @@ class Authentication:
                 record
                 and hmac.compare_digest(token, cookie_token)
             )
+
+    def login_csrf_diagnostics(
+        self, token: str | None, cookie_token: str | None
+    ) -> LoginCsrfDiagnostics:
+        """Return safe booleans for a login CSRF rejection without exposing secrets."""
+
+        form_token_present = bool(token)
+        cookie_present = bool(cookie_token)
+        tokens_equal = bool(
+            token and cookie_token and hmac.compare_digest(token, cookie_token)
+        )
+        challenge_present = False
+        challenge_active = False
+        challenge_expired = False
+        if cookie_token:
+            now = time.time()
+            with self._lock:
+                with self.database.session() as connection:
+                    record = connection.execute(
+                        "SELECT expires_at FROM auth_login_csrf WHERE token = ?",
+                        (cookie_token,),
+                    ).fetchone()
+            if record is not None:
+                challenge_present = True
+                challenge_active = record["expires_at"] > now
+                challenge_expired = not challenge_active
+        return LoginCsrfDiagnostics(
+            form_token_present=form_token_present,
+            cookie_present=cookie_present,
+            tokens_equal=tokens_equal,
+            challenge_present=challenge_present,
+            challenge_active=challenge_active,
+            challenge_expired=challenge_expired,
+        )
 
     def login_csrf_destination(self, cookie_token: str | None) -> str | None:
         if not cookie_token:

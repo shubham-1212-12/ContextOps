@@ -315,11 +315,28 @@ CONTEXTOPS_ADMIN_PASSWORD=your_private_admin_password
 CONTEXTOPS_COOKIE_SECURE=true
 CONTEXTOPS_SESSION_TTL_SECONDS=28800
 DATABASE_PATH=/data/contextops.db
+CONTEXTOPS_CSRF_DIAGNOSTICS=false
 ```
 
 Store both administrator credentials as Netrun secrets. Do not put them in GitHub, the Dockerfile, a committed `.env` file, or a public deployment command. `CONTEXTOPS_COOKIE_SECURE=true` is mandatory when Netrun serves the application through HTTPS; use `false` only for local HTTP development. Confirm that Netrun passes the variables to the source process and mounts the same persistent storage at `/data` for every worker or instance that serves the application; the repository cannot verify those platform behaviors.
 
 For this source-based deployment, mount Netrun's persistent storage at `/data`; the existing `DATABASE_PATH` environment variable already supports that location. If you deploy the Dockerfile instead, it installs `requirements.lock`, starts Uvicorn on `0.0.0.0:8000`, and uses `/app/data` for SQLite. After deployment, verify `/health`, the login page, the same-origin `/static/style.css` response, and a protected page. Do not treat a successful health check as proof that secrets or persistence are configured correctly.
+
+### Temporary CSRF diagnostics
+
+CSRF diagnostics are disabled by default. To investigate a live login failure, add the following temporary runtime value through Netrun Secrets or its environment settings, then restart or redeploy the service:
+
+```text
+CONTEXTOPS_CSRF_DIAGNOSTICS=true
+```
+
+When enabled, rejected login requests write only fixed reason codes, a validation stage, and non-sensitive boolean fields to the application log. They never log usernames, passwords, CSRF tokens, cookie values, session IDs, request bodies, or authentication secrets. Review the logs, then remove the variable or set it to `false` and restart/redeploy again:
+
+```text
+CONTEXTOPS_CSRF_DIAGNOSTICS=false
+```
+
+Do not leave temporary diagnostics enabled longer than necessary. The setting does not disable CSRF validation or change authentication behavior.
 
 ## Implemented and tested features
 
