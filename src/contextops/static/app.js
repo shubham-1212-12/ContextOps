@@ -27,6 +27,12 @@ document.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
   const action = button.dataset.action;
+  if (
+    action === "archive-case" &&
+    !window.confirm(
+      "Delete this case from the review queue? Its audit history and linked quality rules will be preserved.",
+    )
+  ) return;
   button.disabled = true;
   const originalLabel = button.textContent.trim();
   button.textContent = "Updating…";
@@ -42,9 +48,15 @@ document.addEventListener("click", (event) => {
     request = postJson(`/api/rules/${button.dataset.ruleId}/disable`);
   } else if (action === "evaluate-rules") {
     request = postJson(`/api/cases/${button.dataset.caseId}/evaluate-rules`);
+  } else if (action === "archive-case") {
+    request = postJson(`/api/cases/${button.dataset.caseId}/archive`);
   }
   if (request) {
     request.then((data) => {
+      if (action === "archive-case") {
+        window.location.assign(data.redirect || "/?archived=1");
+        return;
+      }
       if (action === "draft-rule" && data.duplicate) {
         button.disabled = false;
         button.textContent = originalLabel;

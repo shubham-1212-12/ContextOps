@@ -21,3 +21,5 @@ def test_login_references_same_origin_static_assets_and_assets_are_served(tmp_pa
     assert script.status_code == 200
     assert script.headers["content-type"].startswith("text/javascript")
     assert "postJson" in script.text
+    assert 'action === "archive-case"' in script.text
+    assert "window.confirm" in script.text

@@ -14,6 +14,10 @@
     </div>
   </section>
 
+  {% if case_archived %}
+  <div class="status-message" role="status">Case deleted from the review queue. Its audit history and linked quality rules were preserved.</div>
+  {% endif %}
+
   <section class="queue-section" aria-labelledby="queue-title">
     <div class="section-heading">
       <div>

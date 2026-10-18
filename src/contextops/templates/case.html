@@ -9,9 +9,25 @@
       <p class="eyebrow">Fictional scheduling case</p>
       <h1>{{ case.title }}</h1>
       <p class="hero-copy">Review the proposal, confirm the evidence, then record a human decision.</p>
-    </div>
-    <span class="case-preservation">Original proposal preserved</span>
-  </header>
+      </div>
+      <div>
+        <span class="case-preservation">Original proposal preserved</span>
+        {% if not case.archived_at %}
+        <button
+          class="secondary"
+          data-action="archive-case"
+          data-case-id="{{ case.id }}"
+          type="button"
+        >Delete Case</button>
+        {% else %}
+        <span class="case-preservation">Archived {{ case.archived_at }}</span>
+        {% endif %}
+      </div>
+    </header>
+
+  {% if case.archived_at %}
+  <div class="status-message" role="status">This case is archived. Its audit history and linked quality rules are preserved.</div>
+  {% endif %}
 
   <section class="proposal-card dark-card" aria-labelledby="proposal-title">
     <div class="section-heading">
@@ -55,7 +71,7 @@
         <span class="badge {{ issue.category }}">{{ issue.category | replace('_', ' ') }}</span>
         <h3>{{ issue.title }}</h3>
         <p>{{ issue.evidence }}</p>
-        {% if issue.category == 'confirmed_violation' %}
+        {% if issue.category == 'confirmed_violation' and not case.archived_at %}
         <button class="secondary" data-action="draft-rule" data-case-id="{{ case.id }}" data-issue-id="{{ issue.id }}">Create draft quality rule</button>
         <div class="duplicate-notice inline-duplicate-notice" data-duplicate-notice hidden role="status" aria-live="polite"></div>
         {% endif %}
@@ -64,6 +80,7 @@
     </div>
   </section>
 
+  {% if not case.archived_at %}
   <section class="decision-card dark-card" aria-labelledby="decision-title">
     <div class="section-heading">
       <div>
@@ -97,12 +114,15 @@
     </details>
     {% endif %}
   </section>
+  {% endif %}
 
   <section class="secondary-stack case-secondary" aria-label="Technical details">
     <details class="secondary-panel">
       <summary>Current active-rule results{% if case.evaluations %} ({{ case.evaluations | length }}){% endif %}</summary>
       <p class="muted">Only explicitly activated rules are evaluated. Disabled rules and older results are not shown here.</p>
+      {% if not case.archived_at %}
       <button class="secondary" data-action="evaluate-rules" data-case-id="{{ case.id }}">Evaluate active rules</button>
+      {% endif %}
       {% if case.evaluations %}
       {% for evaluation in case.evaluations %}
       <div class="event evaluation-event">

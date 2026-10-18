@@ -19,6 +19,11 @@ CREATE TABLE IF NOT EXISTS scheduling_cases (
     context_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS case_archives (
+    case_id TEXT PRIMARY KEY REFERENCES scheduling_cases(id),
+    archived_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS detected_issues (
     id TEXT PRIMARY KEY,
     case_id TEXT NOT NULL REFERENCES scheduling_cases(id),

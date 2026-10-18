@@ -371,7 +371,10 @@ def create_app(database_path: str | None = None) -> FastAPI:
         return templates.TemplateResponse(
             request=request,
             name="index.html",
-            context={"cases": _review_cards(service)},
+            context={
+                "cases": _review_cards(service),
+                "case_archived": request.query_params.get("archived") == "1",
+            },
         )
 
     @app.get("/rules", response_class=HTMLResponse)
@@ -416,6 +419,15 @@ def create_app(database_path: str | None = None) -> FastAPI:
         if case is None:
             raise HTTPException(status_code=404, detail="case not found")
         return case
+
+    @app.post("/api/cases/{case_id}/archive")
+    def archive_case(request: Request, case_id: str) -> JSONResponse:
+        try:
+            result = request.app.state.service.archive_case(case_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="case not found") from error
+        result["redirect"] = "/?archived=1"
+        return JSONResponse(result)
 
     @app.get("/api/rules")
     def rules_data(request: Request) -> list[dict[str, Any]]:

@@ -64,14 +64,26 @@ class ContextOpsService:
     def list_cases(self) -> list[dict[str, Any]]:
         with self.database.session() as connection:
             rows = connection.execute(
-                "SELECT id, title FROM scheduling_cases ORDER BY id"
+                """
+                SELECT scheduling_cases.id, scheduling_cases.title
+                FROM scheduling_cases
+                LEFT JOIN case_archives ON case_archives.case_id = scheduling_cases.id
+                WHERE case_archives.case_id IS NULL
+                ORDER BY scheduling_cases.id
+                """
             ).fetchall()
             return [dict(row) for row in rows]
 
     def get_case(self, case_id: str) -> dict[str, Any] | None:
         with self.database.session() as connection:
             case_row = connection.execute(
-                "SELECT * FROM scheduling_cases WHERE id = ?", (case_id,)
+                """
+                SELECT scheduling_cases.*, case_archives.archived_at
+                FROM scheduling_cases
+                LEFT JOIN case_archives ON case_archives.case_id = scheduling_cases.id
+                WHERE scheduling_cases.id = ?
+                """,
+                (case_id,),
             ).fetchone()
             if case_row is None:
                 return None
@@ -111,6 +123,7 @@ class ContextOpsService:
             return {
                 "id": case_row["id"],
                 "title": case_row["title"],
+                "archived_at": case_row["archived_at"],
                 "original_proposal": read_json(case_row["original_proposal_json"]),
                 "context": read_json(case_row["context_json"]),
                 "issues": [dict(row) for row in issues],
@@ -130,6 +143,53 @@ class ContextOpsService:
                     for row in audit
                 ],
                 "evaluations": [dict(row) for row in evaluations],
+            }
+
+    def archive_case(self, case_id: str) -> dict[str, Any]:
+        """Archive a case while preserving its history and rule references."""
+
+        archived_at = _now()
+        with self.database.session() as connection:
+            case = connection.execute(
+                "SELECT id FROM scheduling_cases WHERE id = ?", (case_id,)
+            ).fetchone()
+            if case is None:
+                raise KeyError(case_id)
+
+            inserted = connection.execute(
+                """
+                INSERT OR IGNORE INTO case_archives (case_id, archived_at)
+                VALUES (?, ?)
+                """,
+                (case_id, archived_at),
+            ).rowcount
+            if inserted:
+                connection.execute(
+                    """
+                    INSERT INTO audit_events (case_id, event_type, payload_json, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        case_id,
+                        "case_archived",
+                        Database.serialize(
+                            {
+                                "case_id": case_id,
+                                "archived_at": archived_at,
+                                "strategy": "soft_delete",
+                            }
+                        ),
+                        archived_at,
+                    ),
+                )
+            row = connection.execute(
+                "SELECT archived_at FROM case_archives WHERE case_id = ?", (case_id,)
+            ).fetchone()
+            assert row is not None
+            return {
+                "case_id": case_id,
+                "archived": True,
+                "archived_at": row["archived_at"],
             }
 
     def create_case(
