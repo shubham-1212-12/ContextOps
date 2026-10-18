@@ -160,7 +160,7 @@ def safe_local_redirect(destination: str | None) -> str:
     ):
         return "/"
     parsed = urlsplit(decoded)
-    if parsed.scheme or parsed.netloc:
+    if parsed.scheme or parsed.netloc or parsed.path == "/logout":
         return "/"
     return decoded
 

@@ -250,13 +250,19 @@ def create_app(database_path: str | None = None) -> FastAPI:
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request) -> HTMLResponse:
         next_destination = safe_local_redirect(request.query_params.get("next"))
-        token = authentication.issue_login_csrf(next_destination)
+        existing_token = request.cookies.get(LOGIN_CSRF_COOKIE_NAME)
+        token = (
+            existing_token
+            if authentication.login_csrf_destination(existing_token) is not None
+            else authentication.issue_login_csrf(next_destination)
+        )
         response = _login_page(
             request,
             csrf_token=token,
             next_destination=next_destination,
         )
-        _set_login_csrf_cookie(response, authentication, token)
+        if token != existing_token:
+            _set_login_csrf_cookie(response, authentication, token)
         return response
 
     @app.post("/login", response_class=HTMLResponse)

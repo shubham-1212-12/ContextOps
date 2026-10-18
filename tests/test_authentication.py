@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from fastapi.testclient import TestClient
 
-from contextops.auth import classify_login_csrf_reason
+from contextops.auth import LOGIN_CSRF_COOKIE_NAME, classify_login_csrf_reason
 from contextops.main import create_app
 from tests.helpers import (
     authenticated_client,
@@ -256,6 +256,91 @@ def test_login_rejects_missing_and_invalid_csrf_tokens_with_403(tmp_path) -> Non
 
     assert missing.status_code == 403
     assert invalid.status_code == 403
+
+
+def test_consecutive_login_pages_reuse_the_active_csrf_challenge(tmp_path) -> None:
+    client = raw_client(tmp_path)
+
+    first_page = client.get("/login")
+    first_token = csrf_token(first_page)
+    first_cookie = client.cookies.get(LOGIN_CSRF_COOKIE_NAME)
+    second_page = client.get("/login")
+    second_token = csrf_token(second_page)
+    second_cookie = client.cookies.get(LOGIN_CSRF_COOKIE_NAME)
+
+    assert first_cookie
+    assert first_cookie == first_token
+    assert second_cookie == first_cookie
+    assert second_token == first_token
+    assert second_page.headers.get_list("set-cookie") == []
+
+    login = client.post(
+        "/login",
+        data={**credentials(), "csrf_token": first_token},
+        follow_redirects=False,
+    )
+
+    assert login.status_code in {302, 303, 307}
+
+
+@pytest.mark.parametrize("cookie_value", ["invalid-csrf-cookie", None])
+def test_missing_or_invalid_login_csrf_cookie_gets_a_fresh_challenge(
+    cookie_value, tmp_path
+) -> None:
+    client = raw_client(tmp_path)
+    if cookie_value is None:
+        client.cookies.clear()
+    else:
+        client.cookies.set(
+            LOGIN_CSRF_COOKIE_NAME,
+            cookie_value,
+            domain="testserver.local",
+            path="/",
+        )
+
+    page = client.get("/login")
+    token = csrf_token(page)
+    cookie = client.cookies.get(LOGIN_CSRF_COOKIE_NAME)
+
+    assert cookie
+    assert cookie == token
+    assert cookie != cookie_value
+    assert page.headers.get_list("set-cookie")
+
+
+def test_expired_login_csrf_cookie_gets_a_fresh_challenge(tmp_path) -> None:
+    client = raw_client(tmp_path)
+    first_page = client.get("/login")
+    first_token = csrf_token(first_page)
+    database = client.app.state.authentication.database
+    with database.session() as connection:
+        connection.execute(
+            "UPDATE auth_login_csrf SET expires_at = ? WHERE token = ?",
+            (0, first_token),
+        )
+
+    refreshed_page = client.get("/login")
+    refreshed_token = csrf_token(refreshed_page)
+
+    assert refreshed_token != first_token
+    assert client.cookies.get(LOGIN_CSRF_COOKIE_NAME) == refreshed_token
+    assert refreshed_page.headers.get_list("set-cookie")
+
+
+def test_successful_login_consumes_reused_login_challenge_once(tmp_path) -> None:
+    database_path = str(tmp_path / "contextops.db")
+    first = raw_client(tmp_path)
+    page = first.get("/login")
+    token = csrf_token(page)
+    second = TestClient(create_app(database_path), base_url="http://testserver")
+    second.cookies.update(first.cookies)
+    form = {**credentials(), "csrf_token": token}
+
+    first_login = first.post("/login", data=form, follow_redirects=False)
+    second_login = second.post("/login", data=form, follow_redirects=False)
+
+    assert first_login.status_code in {302, 303, 307}
+    assert second_login.status_code == 403
 
 
 @pytest.mark.parametrize(
@@ -547,6 +632,33 @@ def test_safe_next_path_is_honoured_but_external_next_url_is_rejected(tmp_path) 
     assert external_login.status_code in {302, 303, 307}
     assert redirect_path(external_login) in {"/", "/dashboard"}
     assert "evil.example" not in external_login.headers["location"]
+
+
+def test_logout_is_not_preserved_as_a_login_next_destination(tmp_path) -> None:
+    client = raw_client(tmp_path)
+
+    response = client.get("/logout", follow_redirects=False)
+
+    assert response.status_code in {302, 303, 307}
+    location = response.headers["location"]
+    assert urlparse(location).path == "/login"
+    assert parse_qs(urlparse(location).query).get("next") == ["/"]
+
+
+def test_legacy_logout_next_value_redirects_to_dashboard_after_login(tmp_path) -> None:
+    client = raw_client(tmp_path)
+    page = client.get("/login")
+    token = csrf_token(page)
+
+    login = client.post(
+        "/login",
+        data={**credentials(), "csrf_token": token, "next": "/logout"},
+        follow_redirects=False,
+    )
+
+    assert login.status_code in {302, 303, 307}
+    assert redirect_path(login) == "/"
+    assert client.get("/").status_code == 200
 
 
 def test_session_cookie_is_httponly_and_samesite_lax(tmp_path) -> None:
