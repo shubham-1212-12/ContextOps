@@ -154,10 +154,12 @@ def _review_cards(service: ContextOpsService) -> list[dict[str, Any]]:
 
 
 def create_app(database_path: str | None = None) -> FastAPI:
-    authentication = Authentication(load_auth_config())
+    auth_config = load_auth_config()
     app = FastAPI(title="ContextOps", version=__version__)
     path = database_path or os.getenv("DATABASE_PATH", "data/contextops.db")
-    app.state.service = ContextOpsService(Database(path))
+    database = Database(path)
+    app.state.service = ContextOpsService(database)
+    authentication = Authentication(auth_config, database)
     app.state.authentication = authentication
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
@@ -232,7 +234,19 @@ def create_app(database_path: str | None = None) -> FastAPI:
         username = _form_value(form, "username")
         password = _form_value(form, "password")
         if not authentication.authenticate(username, password):
-            authentication.record_failed_login(client_ip)
+            failed_retry_after = authentication.record_failed_login(client_ip)
+            if failed_retry_after:
+                response = _login_page(
+                    request,
+                    csrf_token=csrf_token,
+                    next_destination=next_destination,
+                    error="Too many failed sign-in attempts. Try again shortly.",
+                    status_code=429,
+                )
+                response.headers["Retry-After"] = str(
+                    max(1, int(failed_retry_after + 0.999))
+                )
+                return response
             return _login_page(
                 request,
                 csrf_token=csrf_token,
@@ -242,7 +256,8 @@ def create_app(database_path: str | None = None) -> FastAPI:
             )
 
         authentication.clear_failed_logins(client_ip)
-        authentication.consume_login_csrf(cookie_token)
+        if not authentication.consume_login_csrf(cookie_token):
+            return HTMLResponse("Invalid or missing CSRF token", status_code=403)
         session = authentication.create_session(request.cookies.get(SESSION_COOKIE_NAME))
         response = RedirectResponse(url=next_destination, status_code=303)
         _set_session_cookie(response, authentication, session.token)

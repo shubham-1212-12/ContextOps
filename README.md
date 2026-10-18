@@ -156,7 +156,7 @@ docker stop contextops
 > **Security warning**
 > ContextOps now requires one administrator login, but it still has no multi-user identity, roles, tenant isolation, or built-in TLS. Use HTTPS in any shared deployment. Keep the service behind an HTTPS reverse proxy or an authenticated private network, and restrict access to trusted clients.
 
-SQLite supports this single-instance prototype. The repository does not include database migrations, backups, replication, or a production database configuration. A new empty database also receives the fictional seeded cases automatically.
+SQLite supports this prototype when all workers use the same persistent database file. The repository does not include database migrations, backups, replication, or a production database configuration, and SQLite is not a substitute for a shared database across separate hosts or volumes. A new empty database also receives the fictional seeded cases automatically.
 
 ## Demonstration workflow
 
@@ -281,7 +281,7 @@ Authentication requires these environment variables:
 - `CONTEXTOPS_COOKIE_SECURE`: set to `true` for every HTTPS deployment; use `false` only for explicitly local HTTP development
 - `CONTEXTOPS_SESSION_TTL_SECONDS`: positive session lifetime in seconds; defaults to `28800`
 
-The application fails during startup when either administrator credential is missing. It stores opaque sessions in process memory, so restart or replacement logs out all sessions. Run one application instance while using in-memory sessions and SQLite.
+The application fails during startup when either administrator credential is missing. It stores opaque sessions, login CSRF challenges, and failed-login throttling state in SQLite, so workers and process restarts can share authentication state when they use the same database file. Keep `DATABASE_PATH` on persistent storage. Separate hosts or containers with separate database files still require a shared session store or a single application instance.
 
 `HOST` and `PORT` affect the `make run` shell command only. Direct Uvicorn commands use their `--host` and `--port` arguments. The Docker image currently binds to `0.0.0.0:8000`.
 
@@ -317,9 +317,9 @@ CONTEXTOPS_SESSION_TTL_SECONDS=28800
 DATABASE_PATH=/data/contextops.db
 ```
 
-Store both administrator credentials as Netrun secrets. Do not put them in GitHub, the Dockerfile, a committed `.env` file, or a public deployment command. `CONTEXTOPS_COOKIE_SECURE=true` is mandatory when Netrun serves the application through HTTPS; use `false` only for local HTTP development. Confirm that Netrun passes the variables to the source process and mounts persistent storage at `/data`; the repository cannot verify those platform behaviors.
+Store both administrator credentials as Netrun secrets. Do not put them in GitHub, the Dockerfile, a committed `.env` file, or a public deployment command. `CONTEXTOPS_COOKIE_SECURE=true` is mandatory when Netrun serves the application through HTTPS; use `false` only for local HTTP development. Confirm that Netrun passes the variables to the source process and mounts the same persistent storage at `/data` for every worker or instance that serves the application; the repository cannot verify those platform behaviors.
 
-For this source-based deployment, mount Netrun's persistent storage at `/data`; the existing `DATABASE_PATH` environment variable already supports that location. If you deploy the Dockerfile instead, it installs `requirements.lock`, starts Uvicorn on `0.0.0.0:8000`, and uses `/app/data` for SQLite. After deployment, verify `/health`, the login page, and a protected page. Do not treat a successful health check as proof that secrets or persistence are configured correctly.
+For this source-based deployment, mount Netrun's persistent storage at `/data`; the existing `DATABASE_PATH` environment variable already supports that location. If you deploy the Dockerfile instead, it installs `requirements.lock`, starts Uvicorn on `0.0.0.0:8000`, and uses `/app/data` for SQLite. After deployment, verify `/health`, the login page, the same-origin `/static/style.css` response, and a protected page. Do not treat a successful health check as proof that secrets or persistence are configured correctly.
 
 ## Implemented and tested features
 

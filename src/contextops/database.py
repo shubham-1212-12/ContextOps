@@ -66,6 +66,25 @@ CREATE TABLE IF NOT EXISTS rule_evaluations (
     result TEXT NOT NULL,
     evaluated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    token TEXT PRIMARY KEY,
+    csrf_token TEXT NOT NULL,
+    expires_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS auth_login_csrf (
+    token TEXT PRIMARY KEY,
+    destination TEXT NOT NULL,
+    expires_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS auth_failed_logins (
+    client_key TEXT PRIMARY KEY,
+    failures INTEGER NOT NULL,
+    blocked_until REAL NOT NULL,
+    last_seen REAL NOT NULL
+);
 """
 
 

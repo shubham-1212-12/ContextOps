@@ -256,6 +256,68 @@ def test_login_rejects_missing_and_invalid_csrf_tokens_with_403(tmp_path) -> Non
     assert invalid.status_code == 403
 
 
+def test_login_csrf_consumption_is_single_use_across_instances(tmp_path) -> None:
+    database_path = str(tmp_path / "contextops.db")
+    first = raw_client(tmp_path)
+    second = TestClient(create_app(database_path), base_url="http://testserver")
+    token = first.app.state.authentication.issue_login_csrf()
+
+    assert first.app.state.authentication.validate_login_csrf(token, token)
+    assert second.app.state.authentication.consume_login_csrf(token)
+    assert not first.app.state.authentication.consume_login_csrf(token)
+
+
+def test_failed_login_block_is_rechecked_before_incrementing(tmp_path) -> None:
+    database_path = str(tmp_path / "contextops.db")
+    first = raw_client(tmp_path)
+    second = TestClient(create_app(database_path), base_url="http://testserver")
+    client_ip = "shared-concurrency-test-client"
+
+    assert first.app.state.authentication.record_failed_login(client_ip) == 0.0
+    assert first.app.state.authentication.record_failed_login(client_ip) == 0.0
+    assert first.app.state.authentication.record_failed_login(client_ip) == 0.0
+    assert second.app.state.authentication.record_failed_login(client_ip) > 0.0
+
+
+def test_login_csrf_and_session_survive_app_recreation(tmp_path) -> None:
+    database_path = str(tmp_path / "contextops.db")
+    first_instance = raw_client(tmp_path)
+
+    login_page = first_instance.get("/login")
+    token = csrf_token(login_page)
+
+    second_instance = TestClient(
+        create_app(database_path),
+        base_url="http://testserver",
+    )
+    second_instance.cookies.update(first_instance.cookies)
+    login = second_instance.post(
+        "/login",
+        data={**credentials(), "csrf_token": token},
+        follow_redirects=False,
+    )
+
+    assert login.status_code in {302, 303, 307}
+
+    restarted_instance = TestClient(
+        create_app(database_path),
+        base_url="http://testserver",
+    )
+    restarted_instance.cookies.update(second_instance.cookies)
+    protected_page = restarted_instance.get("/")
+    assert protected_page.status_code == 200
+    session_csrf = csrf_token(protected_page)
+    decision = restarted_instance.post(
+        "/api/cases/case-outside-hours/decision",
+        json={
+            "decision": "reject",
+            "rationale": "The proposal is outside the stated working hours.",
+        },
+        headers={"X-CSRF-Token": session_csrf},
+    )
+    assert decision.status_code == 200
+
+
 def test_authenticated_state_changing_requests_reject_missing_and_invalid_csrf(
     tmp_path,
 ) -> None:

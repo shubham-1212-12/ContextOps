@@ -1,4 +1,4 @@
-"""Single-administrator authentication and in-memory session management."""
+"""Single-administrator authentication and SQLite-backed session management."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import threading
 import time
 from dataclasses import dataclass
 from urllib.parse import unquote, urlsplit
+
+from contextops.database import Database
 
 
 SESSION_COOKIE_NAME = "contextops_session"
@@ -33,13 +35,6 @@ class Session:
     token: str
     csrf_token: str
     expires_at: float
-
-
-@dataclass
-class FailedLogin:
-    failures: int
-    blocked_until: float
-    last_seen: float
 
 
 def _required_environment_value(name: str, missing: list[str]) -> str:
@@ -117,128 +112,188 @@ def safe_local_redirect(destination: str | None) -> str:
 
 
 class Authentication:
-    """Thread-safe, bounded in-memory authentication state for one process."""
+    """Thread-safe authentication backed by the shared application database."""
 
-    def __init__(self, config: AuthConfig) -> None:
+    def __init__(self, config: AuthConfig, database: Database) -> None:
         self.config = config
-        self._sessions: dict[str, Session] = {}
-        self._login_csrf_tokens: dict[str, tuple[float, str]] = {}
-        self._failed_logins: dict[str, FailedLogin] = {}
+        self.database = database
         self._lock = threading.RLock()
 
     def _prune_expired_locked(self, now: float) -> None:
-        expired_sessions = [
-            token
-            for token, session in self._sessions.items()
-            if session.expires_at <= now
-        ]
-        for token in expired_sessions:
-            self._sessions.pop(token, None)
-
-        expired_csrf = [
-            token
-            for token, (expires_at, _destination) in self._login_csrf_tokens.items()
-            if expires_at <= now
-        ]
-        for token in expired_csrf:
-            self._login_csrf_tokens.pop(token, None)
-
-        stale_clients = [
-            client
-            for client, record in self._failed_logins.items()
-            if record.last_seen + self.config.session_ttl_seconds <= now
-        ]
-        for client in stale_clients:
-            self._failed_logins.pop(client, None)
-
-    def _bound_mapping_locked(self, mapping: dict[str, object], limit: int) -> None:
-        while len(mapping) > limit:
-            oldest = next(iter(mapping))
-            mapping.pop(oldest, None)
+        with self.database.session() as connection:
+            connection.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", (now,))
+            connection.execute("DELETE FROM auth_login_csrf WHERE expires_at <= ?", (now,))
+            connection.execute(
+                """
+                DELETE FROM auth_failed_logins
+                WHERE last_seen + ? <= ?
+                """,
+                (self.config.session_ttl_seconds, now),
+            )
 
     def issue_login_csrf(self, destination: str = "/") -> str:
         token = secrets.token_urlsafe(32)
-        now = time.monotonic()
+        now = time.time()
         with self._lock:
             self._prune_expired_locked(now)
-            self._login_csrf_tokens[token] = (
-                now + self.config.session_ttl_seconds,
-                destination,
-            )
-            self._bound_mapping_locked(
-                self._login_csrf_tokens, MAX_TRACKED_CSRF_TOKENS
-            )
+            with self.database.session() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO auth_login_csrf (token, destination, expires_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (token, destination, now + self.config.session_ttl_seconds),
+                )
+                connection.execute(
+                    """
+                    DELETE FROM auth_login_csrf
+                    WHERE token IN (
+                        SELECT token FROM auth_login_csrf
+                        ORDER BY rowid ASC
+                        LIMIT -1 OFFSET ?
+                    )
+                    """,
+                    (MAX_TRACKED_CSRF_TOKENS,),
+                )
         return token
 
     def validate_login_csrf(self, token: str | None, cookie_token: str | None) -> bool:
         if not token or not cookie_token:
             return False
-        now = time.monotonic()
+        now = time.time()
         with self._lock:
-            self._prune_expired_locked(now)
-            record = self._login_csrf_tokens.get(cookie_token)
+            with self.database.session() as connection:
+                record = connection.execute(
+                    """
+                    SELECT expires_at FROM auth_login_csrf
+                    WHERE token = ? AND expires_at > ?
+                    """,
+                    (cookie_token, now),
+                ).fetchone()
             return bool(
                 record
-                and record[0] > now
                 and hmac.compare_digest(token, cookie_token)
             )
 
     def login_csrf_destination(self, cookie_token: str | None) -> str | None:
         if not cookie_token:
             return None
+        now = time.time()
         with self._lock:
-            record = self._login_csrf_tokens.get(cookie_token)
-            return record[1] if record else None
+            with self.database.session() as connection:
+                record = connection.execute(
+                    """
+                    SELECT destination FROM auth_login_csrf
+                    WHERE token = ? AND expires_at > ?
+                    """,
+                    (cookie_token, now),
+                ).fetchone()
+            return record["destination"] if record else None
 
-    def consume_login_csrf(self, cookie_token: str | None) -> None:
+    def consume_login_csrf(self, cookie_token: str | None) -> bool:
         if not cookie_token:
-            return
+            return False
+        now = time.time()
         with self._lock:
-            self._login_csrf_tokens.pop(cookie_token, None)
+            with self.database.session() as connection:
+                result = connection.execute(
+                    """
+                    DELETE FROM auth_login_csrf
+                    WHERE token = ? AND expires_at > ?
+                    """,
+                    (cookie_token, now),
+                )
+            return result.rowcount == 1
 
     def get_session(self, token: str | None) -> Session | None:
         if not token:
             return None
-        now = time.monotonic()
+        now = time.time()
         with self._lock:
-            self._prune_expired_locked(now)
-            session = self._sessions.get(token)
-            if session is None or session.expires_at <= now:
-                self._sessions.pop(token, None)
+            with self.database.session() as connection:
+                row = connection.execute(
+                    """
+                    SELECT token, csrf_token, expires_at FROM auth_sessions
+                    WHERE token = ? AND expires_at > ?
+                    """,
+                    (token, now),
+                ).fetchone()
+            if row is None:
                 return None
-            return session
+            return Session(
+                token=row["token"],
+                csrf_token=row["csrf_token"],
+                expires_at=row["expires_at"],
+            )
 
     def validate_csrf(self, session: Session, token: str | None) -> bool:
         return bool(token and hmac.compare_digest(session.csrf_token, token))
 
     def login_allowed(self, client_ip: str) -> float:
-        now = time.monotonic()
+        now = time.time()
         with self._lock:
-            self._prune_expired_locked(now)
-            record = self._failed_logins.get(client_ip)
+            with self.database.session() as connection:
+                record = connection.execute(
+                    """
+                    SELECT blocked_until FROM auth_failed_logins
+                    WHERE client_key = ? AND last_seen + ? > ?
+                    """,
+                    (client_ip, self.config.session_ttl_seconds, now),
+                ).fetchone()
             if record is None:
                 return 0.0
-            return max(0.0, record.blocked_until - now)
+            return max(0.0, record["blocked_until"] - now)
 
-    def record_failed_login(self, client_ip: str) -> None:
-        now = time.monotonic()
+    def record_failed_login(self, client_ip: str) -> float:
+        now = time.time()
         with self._lock:
             self._prune_expired_locked(now)
-            record = self._failed_logins.get(client_ip)
-            failures = (record.failures if record else 0) + 1
-            # Permit a couple of ordinary typos, then apply a short exponential
-            # backoff capped to keep the in-memory throttle lightweight.
-            delay = min(8.0, 2 ** (failures - 3)) if failures >= 3 else 0.0
-            self._failed_logins[client_ip] = FailedLogin(
-                failures=failures,
-                blocked_until=now + delay,
-                last_seen=now,
-            )
-            self._bound_mapping_locked(self._failed_logins, MAX_TRACKED_CLIENTS)
+            with self.database.session() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                record = connection.execute(
+                    """
+                    SELECT failures, blocked_until FROM auth_failed_logins
+                    WHERE client_key = ?
+                    """,
+                    (client_ip,),
+                ).fetchone()
+                if record and record["blocked_until"] > now:
+                    return record["blocked_until"] - now
+                failures = (record["failures"] if record else 0) + 1
+                # Permit a couple of ordinary typos, then apply a short
+                # exponential backoff capped to keep the shared throttle bounded.
+                delay = min(8.0, 2 ** (failures - 3)) if failures >= 3 else 0.0
+                connection.execute(
+                    """
+                    INSERT INTO auth_failed_logins
+                        (client_key, failures, blocked_until, last_seen)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(client_key) DO UPDATE SET
+                        failures = excluded.failures,
+                        blocked_until = excluded.blocked_until,
+                        last_seen = excluded.last_seen
+                    """,
+                    (client_ip, failures, now + delay, now),
+                )
+                connection.execute(
+                    """
+                    DELETE FROM auth_failed_logins
+                    WHERE client_key IN (
+                        SELECT client_key FROM auth_failed_logins
+                        ORDER BY last_seen ASC
+                        LIMIT -1 OFFSET ?
+                    )
+                    """,
+                    (MAX_TRACKED_CLIENTS,),
+                )
+                return 0.0
 
     def clear_failed_logins(self, client_ip: str) -> None:
         with self._lock:
-            self._failed_logins.pop(client_ip, None)
+            with self.database.session() as connection:
+                connection.execute(
+                    "DELETE FROM auth_failed_logins WHERE client_key = ?", (client_ip,)
+                )
 
     def authenticate(self, username: str, password: str) -> bool:
         username_matches = hmac.compare_digest(username, self.config.username)
@@ -246,7 +301,7 @@ class Authentication:
         return username_matches and password_matches
 
     def create_session(self, previous_token: str | None = None) -> Session:
-        now = time.monotonic()
+        now = time.time()
         session = Session(
             token=secrets.token_urlsafe(32),
             csrf_token=secrets.token_urlsafe(32),
@@ -254,12 +309,24 @@ class Authentication:
         )
         with self._lock:
             self._prune_expired_locked(now)
-            if previous_token:
-                self._sessions.pop(previous_token, None)
-            self._sessions[session.token] = session
+            with self.database.session() as connection:
+                if previous_token:
+                    connection.execute(
+                        "DELETE FROM auth_sessions WHERE token = ?", (previous_token,)
+                    )
+                connection.execute(
+                    """
+                    INSERT INTO auth_sessions (token, csrf_token, expires_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (session.token, session.csrf_token, session.expires_at),
+                )
         return session
 
     def logout(self, token: str | None) -> None:
         if token:
             with self._lock:
-                self._sessions.pop(token, None)
+                with self.database.session() as connection:
+                    connection.execute(
+                        "DELETE FROM auth_sessions WHERE token = ?", (token,)
+                    )
