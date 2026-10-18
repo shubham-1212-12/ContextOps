@@ -295,16 +295,16 @@ For HTTPS deployments, `CONTEXTOPS_COOKIE_SECURE=true` is mandatory. Configure r
 
 ## Configure a Netrun deployment
 
-For a source-based Python deployment, configure Netrun to install from the root `requirements.txt` file. It is pinned from `requirements.lock`, which remains the repository's reproducible lockfile:
+For a source-based Python deployment, configure Netrun to install from the root `requirements.txt` file. It installs the pinned dependencies from `requirements.lock` and the local `contextops` package, which makes the `src/contextops` package importable without a `PYTHONPATH` override. `requirements.lock` remains the repository's reproducible dependency lockfile:
 
 ```sh
 python -m pip install --requirement requirements.txt
 ```
 
-Use this startup command so the application imports from `src`, listens on all interfaces, and honors Netrun's `PORT` value:
+After that install, use this startup command so the application listens on all interfaces and honors Netrun's `PORT` value:
 
 ```sh
-PYTHONPATH=src python -m uvicorn contextops.main:app --host 0.0.0.0 --port "${PORT:-8000}"
+python -m uvicorn contextops.main:app --host 0.0.0.0 --port "${PORT:-8000}"
 ```
 
 For a source-based Netrun deployment, configure these exact names through Netrun's secret and runtime environment facilities:
