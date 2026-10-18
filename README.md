@@ -295,19 +295,31 @@ For HTTPS deployments, `CONTEXTOPS_COOKIE_SECURE=true` is mandatory. Configure r
 
 ## Configure a Netrun deployment
 
-This repository does not include Netrun-specific configuration, so verify Netrun's environment-variable and persistent-storage behavior in its deployment settings before exposing the service. Configure these exact names through Netrun's secret and runtime environment facilities:
+For a source-based Python deployment, configure Netrun to install from the root `requirements.txt` file. It is pinned from `requirements.lock`, which remains the repository's reproducible lockfile:
+
+```sh
+python -m pip install --requirement requirements.txt
+```
+
+Use this startup command so the application imports from `src`, listens on all interfaces, and honors Netrun's `PORT` value:
+
+```sh
+PYTHONPATH=src python -m uvicorn contextops.main:app --host 0.0.0.0 --port "${PORT:-8000}"
+```
+
+For a source-based Netrun deployment, configure these exact names through Netrun's secret and runtime environment facilities:
 
 ```text
 CONTEXTOPS_ADMIN_USERNAME=your_private_admin_username
 CONTEXTOPS_ADMIN_PASSWORD=your_private_admin_password
 CONTEXTOPS_COOKIE_SECURE=true
 CONTEXTOPS_SESSION_TTL_SECONDS=28800
-DATABASE_PATH=/app/data/contextops.db
+DATABASE_PATH=/data/contextops.db
 ```
 
-Store both administrator credentials as Netrun secrets. Do not put them in GitHub, the Dockerfile, a committed `.env` file, or a public deployment command. `CONTEXTOPS_COOKIE_SECURE=true` is mandatory when Netrun serves the application through HTTPS; use `false` only for local HTTP development. Confirm that Netrun passes the variables to the container and mounts persistent storage at `/app/data`; the repository cannot verify those platform behaviors.
+Store both administrator credentials as Netrun secrets. Do not put them in GitHub, the Dockerfile, a committed `.env` file, or a public deployment command. `CONTEXTOPS_COOKIE_SECURE=true` is mandatory when Netrun serves the application through HTTPS; use `false` only for local HTTP development. Confirm that Netrun passes the variables to the source process and mounts persistent storage at `/data`; the repository cannot verify those platform behaviors.
 
-The Docker image starts Uvicorn on `0.0.0.0:8000` and creates `/app/data` for SQLite. Configure Netrun to route its public HTTPS endpoint to container port `8000`. After deployment, verify `/health`, the login page, and a protected page. Do not treat a successful health check as proof that secrets or persistence are configured correctly.
+For this source-based deployment, mount Netrun's persistent storage at `/data`; the existing `DATABASE_PATH` environment variable already supports that location. If you deploy the Dockerfile instead, it installs `requirements.lock`, starts Uvicorn on `0.0.0.0:8000`, and uses `/app/data` for SQLite. After deployment, verify `/health`, the login page, and a protected page. Do not treat a successful health check as proof that secrets or persistence are configured correctly.
 
 ## Implemented and tested features
 
